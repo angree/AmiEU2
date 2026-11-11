@@ -1,0 +1,3 @@
+Fonts fx*.euf: the X.Org misc-fixed bitmap fonts 6x9, 6x10, 6x13, 6x13B, 7x13B
+(https://gitlab.freedesktop.org/xorg/font/misc-misc), made proportional by tools/mkfont/bdf2euf.py.
+Their licence, verbatim (COPYING): "Public domain font.  Share and enjoy."

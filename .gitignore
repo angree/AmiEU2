@@ -1,0 +1,23 @@
+# NEVER commit Paradox / GOG material
+/Europa Universalis 2/
+/setup_*.exe
+*.bin
+*.bik
+*.mp3
+# converter output and build products
+/out/
+/build/obj/
+/build/host/
+/data-amiga/
+*.o
+*.exe
+*.pak
+*.hunk
+# local-only, not redistributable
+/native/cgx-include/
+/winuae/run/
+__pycache__/
+.claude/settings.local.json
+
+# agent tooling (local only)
+.claude/

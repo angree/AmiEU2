@@ -1,0 +1,43 @@
+; eu2-aros.uae - AROS 68k compatibility guest (functional test only, never for timings).
+; Full AROS m68k nightly: ROM + system as a host directory (local copy of E:\aros\sys in
+; C:\temp\amiga_eu2\aros-sys, whose S:User-Startup runs Work:run). Own Work: (work-aros) so it never
+; shares Work:jobs with the reference guest; work-aros\data is a junction to work\data.
+config_window_title=EU2 TEST AROS (agents)
+config_description=Amiga EU2 port - AROS m68k nightly, 68020, AGA + uaegfx, 128 MB Z3
+cpu_type=68020
+cpu_model=68020
+fpu_model=0
+cpu_compatible=false
+cpu_24bit_addressing=false
+cpu_speed=max
+cpu_throttle=-700.0
+cachesize=0
+chipset=aga
+chipset_compatible=A4000
+chipmem_size=4
+fastmem_size=0
+z3mem_size=128
+gfxcard_type=uaegfx
+gfxcard_size=16
+kickstart_rom_file=C:\temp\amiga_eu2\aros-sys\boot\amiga\aros-rom.bin
+kickstart_ext_rom_file=C:\temp\amiga_eu2\aros-sys\boot\amiga\aros-ext.bin
+filesystem2=rw,DH0:AROS:C:\temp\amiga_eu2\aros-sys,1
+filesystem2=rw,WORK:Work:C:\temp\amiga_eu2\work-aros,-128
+gfx_width_windowed=660
+gfx_height_windowed=520
+gfx_fullscreen_amiga=false
+gfx_linemode=double
+gfx_api=1
+gfx_vsync=false
+use_gui=no
+show_leds=true
+sound_output=interrupts
+win32.inactive_pause=false
+win32.minimized_pause=false
+win32.start_iconified=true
+win32.iconified_pause=false
+magic_mouse=true
+magic_mousecursor=1
+win32.posx=960
+win32.posy=60
+win32.start_not_captured=true
