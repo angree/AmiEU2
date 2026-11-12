@@ -17,8 +17,8 @@ you get a folder `data` (~340 MB, most of it is the music).
 **Linux:**
 
 ```
-./eu2conv setup_europa_universalis2_2.0.0.1.exe data
-./eu2conv --dir "/path/to/Europa Universalis II" data
+./eu2conv-linux setup_europa_universalis2_2.0.0.1.exe data
+./eu2conv-linux --dir "/path/to/Europa Universalis II" data
 ```
 
 Every file is checked against the GOG v1.09 release; anything else is refused. Nothing is downloaded or
@@ -33,9 +33,12 @@ options, then start **eu2**. 2 MB of stack is taken care of by the program itsel
 Requirements: 68020+ (68040/060 to play comfortably), 64 MB fast RAM, AGA or an RTG card, AmigaOS 3.x,
 AROS 68k or MorphOS.
 
-## 3. Version 0.2.0 — the first public release
+## 3. Version 0.2.1
 
-An early, playable-but-incomplete version. Working:
+0.2.1 fixes the Windows converter: the 0.2.0 converter zip held the Linux program under the name
+`eu2conv.exe`, which Windows refuses to start. The Amiga program is unchanged apart from the version number.
+
+0.2.0 was the first public release: an early, playable-but-incomplete version. Working:
 
 - main menu, scenarios, tutorial, credits, save / load;
 - the map with all map modes, three zoom levels, fog of war, terra incognita;
