@@ -1135,7 +1135,8 @@ void world_note(World *w, int type, int country, int prov, int other)
 {
 	Note *n;
 	if (country < 0 || country >= w->ncountry) return;
-	if (!w->country[country].human) {                     /* another country: kept for its OTHER message */
+	if (!w->country[country].human && type != NOTE_DIPMSG) {   /* another country: kept for its OTHER message (a DIPMSG names
+	                                                        * the sender; its callers already checked the player is the receiver) */
 		if ((type == NOTE_BATTLE_WIN || type == NOTE_SIEGE_WIN || type == NOTE_REVOLT || type == NOTE_BANKRUPT) && w->nnews < 32) {
 			n = &w->news[w->nnews++];
 			n->type = (short)type; n->country = (short)country; n->prov = (short)prov; n->other = (short)other;

@@ -19,6 +19,7 @@ int       mil_at_war(const World *w, int a, int b);
 long      mil_order_move(Military *m, int unit, int dest, long today);
 void      mil_ai_colonial(Military *m, int country, int start);   /* the colonial agent's explore plans (SPEC_AI_EXPLORE 2.1) */
 long      mil_order_append(Military *m, int unit, int dest, long today);   /* Shift + right click: a waypoint after the current order */
+long      mil_order_fleet_append(Military *m, int fleet, int dest, long today);   /* the same for a fleet */
 int       mil_land_unit_at(const World *w, int prov, int owner);   /* first live unit, or -1 */
 void      mil_neighbour_bits(const Military *m, unsigned char *bits);  /* (MAX_COUNTRY^2+7)/8 bytes */
 void      mil_prof(long ms[6]);   /* time spent: move, build+battles, rebuild, sieges, AI (ms, all instances) */
@@ -45,6 +46,7 @@ long      mil_ship_cost(const Military *m, int country, int kind);        /* duc
 long      mil_ship_days(const Military *m, int country, int kind);   /* 0x438298: warships 9 + Low Wind months, galleys 5, transports 6 */
 int       mil_build_ship(Military *m, int country, int prov, int kind, long today);
 int       mil_is_port(const World *w, int prov);
+int       mil_may_dock(const Military *m, int c, int port);   /* 0x48c640: may C's fleet enter that port */
 int       mil_besieger(const Military *m, int prov);           /* the country besieging prov, -1 none */
 long      mil_army_weight(const LandUnit *u);                 /* x1000 (sea transport) */
 long      mil_fleet_capacity(const NavalUnit *f);             /* x1000: warship 1, galley 0.5, transport 2 */

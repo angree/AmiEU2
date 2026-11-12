@@ -65,9 +65,11 @@ typedef struct {
 	short slider[ECON_SL_N];
 	long progress_m[ECON_SL_N], cost_m[ECON_SL_N];   /* research/stability progress and the next step's cost */
 	long income_m;                                   /* last month's budget pool */
+	unsigned char lock;                              /* bit per row: locked by a double click (0x4279e0) */
 } EconBudget;
 void     econ_budget(const Economy *e, int country, EconBudget *b);
 void     econ_set_slider(Economy *e, int country, int row, int value_m);
+int      econ_slider_lock(Economy *e, int country, int row);   /* double click on a knob: toggles its lock, returns the new state */
 
 /* save game: an amieu2_economy block; restore reads it from the parsed save file (script.h) */
 void     econ_save(const Economy *e, FILE *f);

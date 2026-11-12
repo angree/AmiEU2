@@ -35,7 +35,7 @@ int  peace_find_war(const World *w, int a, int b);
 void peace_leave_all(Peace *p, int c, long today);       /* COUNTRY_BROKEN: c leaves all its wars */       /* war with a and b on opposite sides, or -1 */
 
 /* a winning AI leader offers the human leader these terms; return 1 to accept */
-typedef int (*PeaceOfferFn)(void *user, int war, int winner, const short *provs, int nprovs, long gold_m);
+typedef int (*PeaceOfferFn)(void *user, int war, int sender, int winner, const short *provs, int nprovs, long gold_m);   /* sender: who offers */
 void peace_set_offer(Peace *p, PeaceOfferFn fn, void *user);
 
 enum { PEACE_WHITE, PEACE_DEMAND, PEACE_SURRENDER };

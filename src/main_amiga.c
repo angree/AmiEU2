@@ -60,11 +60,12 @@ static void logf_(const char *fmt, ...)
 }
 
 typedef struct {
-	char gfx[16], scenario[96], country[4], debugwar[4];   /* debugwar: that country declares war on us on day 2 (tests) */
+	char gfx[16], scenario[96], country[4], debugwar[8];   /* debugwar: that country declares war on us on day 2 (tests) */
 	int debugend;                          /* tests: the scenario ends a month after the start */
 	int debugsel;                          /* tests: select our first army in a battle / siege, pause (1) or not (2) */
 	int debugmanu;                         /* tests: open the build-manufactory sub-panel on our capital once */
 	int debugnaval;                        /* tests: on day 3 the debugwar country's first fleet and ours meet in a sea zone */
+	int debugdisc;                         /* tests: that province becomes known to us on day 3 */
 	int intro;                             /* the intro stills before the menu (1, default) */
 	char debugpeace[4];                    /* tests: the peace window with that country on day 3, paused */
 	char debugask[20];                     /* tests: an AI proposal of that type (FRA proposing) on day 2 */
@@ -94,7 +95,7 @@ static void read_cfg(Cfg *c)
 	strcpy(c->country, "FRA");
 	c->sound = 1;
 	c->rtg_w = 800; c->rtg_h = 600; c->rtg_bits = 0; c->probemodes = 0; c->titlebar = 0; c->syspointer = 0; c->ahi = 0; c->anim = -1;
-	c->autoexit_ms = 0; c->title_ms = 1500; c->bench = 0; c->select = 0; c->menu = 1; c->xy_set = 0; c->debugwar[0] = 0; c->debugend = 0; c->debugsel = 0; c->debugmanu = 0; c->debugnaval = 0; c->debugpeace[0] = 0; c->debugask[0] = 0; c->intro = 1;
+	c->autoexit_ms = 0; c->title_ms = 1500; c->bench = 0; c->select = 0; c->menu = 1; c->xy_set = 0; c->debugwar[0] = 0; c->debugend = 0; c->debugsel = 0; c->debugmanu = 0; c->debugdisc = 0; c->debugnaval = 0; c->debugpeace[0] = 0; c->debugask[0] = 0; c->intro = 1;
 	c->x = 9500; c->y = 1900; c->zoom = 2;
 	if (!f) return;
 	while (fgets(line, sizeof line, f)) {
@@ -110,6 +111,7 @@ static void read_cfg(Cfg *c)
 		else if (!strcmp(line, "debugend")) c->debugend = atoi(v);
 		else if (!strcmp(line, "debugsel")) c->debugsel = atoi(v);
 		else if (!strcmp(line, "debugmanu")) c->debugmanu = atoi(v);
+		else if (!strcmp(line, "debugdisc")) c->debugdisc = atoi(v);
 		else if (!strcmp(line, "debugnaval")) c->debugnaval = atoi(v);
 		else if (!strcmp(line, "intro")) c->intro = atoi(v);
 		else if (!strcmp(line, "debugpeace")) snprintf(c->debugpeace, sizeof c->debugpeace, "%s", v);
@@ -299,6 +301,7 @@ static const char *move_sound(void)
 }
 static int g_fleet = -1;                 /* selected fleet of the player */
 static int g_infowin = UI_IW_PROVINCE, g_sl_drag = -1;   /* sidebar info window, budget slider being dragged */
+static int g_tech_drag;                                  /* the land / naval maintenance knob is being dragged */
 /* the peace window (SPEC_UI §4.12) */
 #define PW_MAX 256
 static int g_pw_enemy = -1, g_pw_page, g_pw_demand, g_pw_scroll, g_pw_ncand, g_pw_nside;
@@ -1310,14 +1313,14 @@ static void list_terms(char *s, int n, const short *provs, int np, long gold_m)
 }
 
 /* a winning AI leader offers the player terms (peace.c, monthly) */
-static int peace_offer(void *u, int war, int winner, const short *provs, int np, long gold_m)
+static int peace_offer(void *u, int war, int sender, int winner, const short *provs, int np, long gold_m)
 {
 	const char *lab[4] = { NULL, NULL, NULL, NULL };
 	char text[900], terms[560], date[64], l1[96], l2[160], l3[96], l5[600];
-	const War *wr = &g_world.war[war];
-	int lead = winner == 1 ? wr->att[0] : wr->def[0];
+	int lead = sender;                 /* the herald comes from the one who offers (was: the winning side's leader, so
+	                                    * a losing AI's offer read "Spain offers us peace" to Spain itself) */
 	const char *cn;
-	(void)u;
+	(void)u; (void)war; (void)winner;
 	cn = text_get(g_world.country[lead].tag);
 	list_terms(terms, sizeof terms, provs, np, gold_m);
 	/* the herald (PEACEPROP_1..6): "%t" is the address by victory points (0x579150) */
@@ -1993,7 +1996,7 @@ static void msg_popup(const char *type, const char *a1, const char *a2, const ch
 		if (t == (const char *)key || !strcmp(t, key)) continue;   /* no such line */
 		{	char f[200];
 			expand_t(f, sizeof f, t);                            /* %t: the address (0x579150) */
-			snprintf(m->box[b], sizeof m->box[b], f, b == 0 ? "" : a1 ? a1 : "", a2 ? a2 : "", a3 ? a3 : "");
+			snprintf(m->box[b], sizeof m->box[b], f, b == 0 || (b == 1 && !strcmp(type, "WEMILALLDISHONOR")) ? "" : a1 ? a1 : "", a2 ? a2 : "", a3 ? a3 : "");   /* "Dishonor!%s": no name there */
 		}
 		if (!m->box[b][0]) continue;
 		if (b) any = 1;
@@ -2192,7 +2195,7 @@ static void check_messages(void)
 	for (i = 0; i < g_world.nnote; i++) {             /* the modules' notifications for us */
 		const Note *n = &g_world.note[i];
 		const char *pn = n->prov > 0 && n->prov < g_world.nprov && g_world.prov[n->prov].name ? g_world.prov[n->prov].name : "?";
-		if (n->country != g_player) continue;
+		if (n->country != g_player && n->type != NOTE_DIPMSG) continue;   /* a DIPMSG names its sender; it is posted only to a player */
 		if (n->type == NOTE_MERCLOSS) {
 			char left[8];
 			int cot = -1, j;
@@ -2541,7 +2544,7 @@ static int mw_event(const AmigaGfxEvent *e, int *moved, int *bar)
 		if (e->code != AMIGAGFX_BUTTON_LEFT) return 1;
 		if (h == 2) { mw_front(i); g_mw_drag = g_nmw - 1; g_mw_gx = e->x - g_mw[g_mw_drag].x; g_mw_gy = e->y - g_mw[g_mw_drag].y; *moved = 1; return 1; }
 	} else if (e->type == AMIGAGFX_EV_KEY && (e->code == 0x44 || e->code == 0x43)) { i = g_nmw - 1; h = 0; }      /* Enter: BTN1 of the front one */
-	else if (e->type == AMIGAGFX_EV_KEY && e->code == 0x40 && g_mw[g_nmw - 1].btn[1][0]) { i = g_nmw - 1; h = 1; }   /* Space: BTN2 */
+	/* Space is NOT taken here (the exe gives it BTN2): the Amiga has no Pause key, so Space always pauses (user 2026-11-12) */
 	else return 0;
 	if (h == 0) { logf_("msgwin: %s closed", g_mw_type[i]); mw_close(i); *moved = 1; return 1; }
 	if (h == 1) {                                         /* Goto / Details: the window stays */
@@ -3323,7 +3326,7 @@ static void cursor_choose(MapView *mv, int held)
 			else if (g_army >= 0) k = !known && !sea ? UI_CUR_EXPLORE_ARMY : sea ? (mil_fleet_at(&g_world, id, g_player) >= 0 ? UI_CUR_LOAD : UI_CUR_ILLEGAL)
 			                        : o >= 0 && o != g_player && mil_at_war(&g_world, g_player, o) ? UI_CUR_ATTACK_ARMY : UI_CUR_MOVE_ARMY;
 			else if (g_fleet >= 0) k = g_unload ? (sea ? UI_CUR_ILLEGAL : UI_CUR_UNLOAD) : sea ? (known ? UI_CUR_MOVE_NAVY : UI_CUR_EXPLORE_NAVY)
-			                        : mil_is_port(&g_world, id) && (p->owner == g_player) ? UI_CUR_ENTERPORT : UI_CUR_ILLEGAL;
+			                        : mil_is_port(&g_world, id) && g_mil && mil_may_dock(g_mil, g_player, id) ? UI_CUR_ENTERPORT : UI_CUR_ILLEGAL;
 		}
 	}
 	if (k != ui_cursor_get()) { ui_cursor_kind(k); scr_blit(0, 0, 0, 0); }
@@ -3488,6 +3491,12 @@ front_again:
 		for (k = 0; k < g_world.nnaval; k++)
 			if (g_world.naval[k].owner == g_player && !g_world.naval[k].l_id && g_world.naval[k].warships + g_world.naval[k].galleys + g_world.naval[k].transports > 0) { g_fleet = k; g_army = -1; g_selected = g_world.naval[k].location; g_infowin = UI_IW_PROVINCE; break; }
 		logf_("select=-2: fleet %d", k < g_world.nnaval ? k : -1);
+	}
+	if (g_cfg->select == -3 && g_player >= 0) {        /* tests: select our first fleet with a leader (an explorer) */
+		int k;
+		for (k = 0; k < g_world.nnaval; k++)
+			if (g_world.naval[k].owner == g_player && g_world.naval[k].l_id) { g_fleet = k; g_army = -1; g_selected = g_world.naval[k].location; g_infowin = UI_IW_PROVINCE; break; }
+		logf_("select=-3: fleet %d", k < g_world.nnaval ? k : -1);
 	}
 	if (!g_tut && !quit_now) tut_setup(&text, 0);
 	if (!g_hist_loaded) {
@@ -4000,7 +4009,7 @@ front_again:
 				}
 				else if ((g_infowin == UI_IW_LANDTECH || g_infowin == UI_IW_NAVALTECH) && (ev.x < mx && ev.y < g_side_h) && g_ec && g_player >= 0) {   /* maintenance level */
 					int lv = ui_tech_hit(ev.x, ev.y);
-					if (lv >= 0) { econ_set_maint_level(g_ec, g_player, g_infowin == UI_IW_NAVALTECH, lv); bar = 2; logf_("maintenance %s: %d", g_infowin == UI_IW_NAVALTECH ? "naval" : "land", lv); }
+					if (lv >= 0) { g_tech_drag = 1; econ_set_maint_level(g_ec, g_player, g_infowin == UI_IW_NAVALTECH, lv); bar = 2; logf_("maintenance %s: %d", g_infowin == UI_IW_NAVALTECH ? "naval" : "land", lv); }
 				}
 				else if (g_infowin == UI_IW_COUNTRY && (ev.x < mx && ev.y < g_side_h) && g_player >= 0) {     /* the shield button: domestic policy (window 0x19) */
 					int h = ui_country_hit(ev.x, ev.y);
@@ -4013,12 +4022,24 @@ front_again:
 					if (h >= 0) { domestic_step(h / 2, (h & 1) ? 1 : -1); bar = 2; }
 				}
 				else if (g_infowin == UI_IW_BUDGET && (ev.x < mx && ev.y < g_side_h) && g_ec && g_player >= 0) {     /* budget window: slider */
-					int v, r = ui_budget_hit(ev.x, ev.y, &v);
-					if (r >= 0) { econ_set_slider(g_ec, g_player, r, v); g_sl_drag = r; bar = 2; }
+					static unsigned long kt; static int kr = -1;
+					EconBudget bb;
+					int v, r, kn;
+					econ_budget(g_ec, g_player, &bb);
+					kn = ui_budget_knob(ev.x, ev.y, bb.slider);
+					if (kn >= 0 && kn == kr && amigagfx_millis() - kt < 500) {        /* a double click on the knob: lock / unlock (HINT_94) */
+						logf_("budget: row %d %s", kn, econ_slider_lock(g_ec, g_player, kn) ? "locked" : "unlocked");
+						kr = -1; bar = 2;
+					} else {
+						kr = kn; kt = amigagfx_millis();
+						r = ui_budget_hit(ev.x, ev.y, &v);
+						if (r >= 0 && !(bb.lock >> r & 1)) { econ_set_slider(g_ec, g_player, r, v); g_sl_drag = r; bar = 2; }
+					}
 				}
 				else if (on_map(ev.x, ev.y, mx, my)) { dragging = 1; dragdist = 0; lastx = ev.x; lasty = ev.y; band_x0 = ev.x; band_y0 = ev.y; band_on = 0; }
-			} else if (ev.type == AMIGAGFX_EV_MOUSEUP && ev.code == AMIGAGFX_BUTTON_LEFT && g_sl_drag >= 0) {
-				g_sl_drag = -1;
+			} else if (ev.type == AMIGAGFX_EV_MOUSEUP && ev.code == AMIGAGFX_BUTTON_LEFT && (g_sl_drag >= 0 || g_tech_drag)) {
+				if (g_tech_drag && g_ec && g_player >= 0) logf_("maintenance %s: %d (drag)", g_infowin == UI_IW_NAVALTECH ? "naval" : "land", econ_maint_level(g_ec, g_player, g_infowin == UI_IW_NAVALTECH));
+				g_sl_drag = -1; g_tech_drag = 0;
 			} else if (ev.type == AMIGAGFX_EV_MOUSEUP && ev.code == AMIGAGFX_BUTTON_LEFT) {
 				int was_drag = dragging, picked = 0, was_band = band_on;   /* band_end() clears band_on */
 				dragging = 0;
@@ -4136,8 +4157,8 @@ if (id > 0 && id < g_world.nprov && g_army >= 0 && g_mil && !g_world.land[g_army
 					sound_play(days >= 0 ? move_sound() : "if_error");                    /* 0x531276 / 0x531342 */
 					moved = 1; bar = 2;                                                  /* the destination mark */
 				} else if (id > 0 && id < g_world.nprov && g_fleet >= 0 && g_mil && g_fleet < g_world.nnaval) {
-					long days = mil_order_fleet(g_mil, g_fleet, id, g_dayno);         /* right click: sail order */
-					{ int k; for (k = 0; k < g_nselF; k++) if (g_selF[k] != g_fleet) mil_order_fleet(g_mil, g_selF[k], id, g_dayno); }
+					long days = (g_shift ? mil_order_fleet_append : mil_order_fleet)(g_mil, g_fleet, id, g_dayno);   /* right click: sail order; Shift: a waypoint */
+					{ int k; for (k = 0; k < g_nselF; k++) if (g_selF[k] != g_fleet) (g_shift ? mil_order_fleet_append : mil_order_fleet)(g_mil, g_selF[k], id, g_dayno); }
 					units_set_time(amigagfx_millis()); units_order_anim(ev.x - mx, ev.y - my, days >= 0);
 					logf_("order: fleet %s to %s - %ld days", g_world.naval[g_fleet].name, g_world.prov[id].name, days);
 					if (days < 0 && !WORLD_KNOWN(&g_world, g_player, id)) {
@@ -4227,7 +4248,7 @@ if (id > 0 && id < g_world.nprov && g_army >= 0 && g_mil && !g_world.land[g_army
 						}
 					} else moved = 1;
 				}
-			} else if (ev.type == AMIGAGFX_EV_MOUSEMOVE && !dragging && g_sl_drag < 0) {   /* rollover help over the sidebar buttons */
+			} else if (ev.type == AMIGAGFX_EV_MOUSEMOVE && !dragging && g_sl_drag < 0 && !g_tech_drag) {   /* rollover help over the sidebar buttons */
 				g_mouse_x = ev.x; g_mouse_y = ev.y;
 				int mx, my, mw, mh, hb;
 				if (g_infowin == UI_IW_DIPLO && g_dip_target >= 0 && g_dip_confirm < 0) {   /* the action under the mouse turns white */
@@ -4257,6 +4278,11 @@ if (id > 0 && id < g_world.nprov && g_army >= 0 && g_mil && !g_world.land[g_army
 				}
 				if (hb != tip_btn) { tip_btn = hb; tip_t = amigagfx_millis(); }
 				tip_x = ev.x; tip_y = ev.y;
+			} else if (ev.type == AMIGAGFX_EV_MOUSEMOVE && g_tech_drag) {              /* dragging the maintenance knob */
+				if ((g_infowin == UI_IW_LANDTECH || g_infowin == UI_IW_NAVALTECH) && g_ec && g_player >= 0) {
+					int lv = ui_tech_drag(ev.x);
+					if (lv != econ_maint_level(g_ec, g_player, g_infowin == UI_IW_NAVALTECH)) { econ_set_maint_level(g_ec, g_player, g_infowin == UI_IW_NAVALTECH, lv); bar = 2; }
+				} else g_tech_drag = 0;
 			} else if (ev.type == AMIGAGFX_EV_MOUSEMOVE && g_sl_drag >= 0) {           /* dragging a budget slider */
 				int v, r = ui_budget_hit(ev.x, ev.y, &v);
 				if (r == g_sl_drag && g_ec && g_player >= 0) { econ_set_slider(g_ec, g_player, r, v); bar = 2; }
@@ -4294,14 +4320,16 @@ if (id > 0 && id < g_world.nprov && g_army >= 0 && g_mil && !g_world.land[g_army
 			if (cfg.debugwar[0] && g_dip && g_player >= 0) {        /* test hook: a war declared on us */
 				static int done;
 				int e = world_country(&g_world, cfg.debugwar);
-				if (++done == 2 && e >= 0) logf_("debugwar: %s -> %d", cfg.debugwar, diplo_declare_war(g_dip, e, g_player, g_dayno));
+				int tg = cfg.debugwar[3] == '>' ? world_country(&g_world, cfg.debugwar + 4) : g_player;   /* "FRA>ENG": on another country */
+				if (cfg.debugwar[3] == '>') { cfg.debugwar[3] = 0; e = world_country(&g_world, cfg.debugwar); cfg.debugwar[3] = '>'; }
+				if (++done == 2 && e >= 0 && tg >= 0) logf_("debugwar: %s -> %d", cfg.debugwar, diplo_declare_war(g_dip, e, tg, g_dayno));
 			}
 			if (cfg.debugask[0] && g_player >= 0) {               /* test hook: an AI proposal */
 				static int adone;
 				if (++adone == 2 && !strcmp(cfg.debugask, "PEACEPROP")) {   /* the AI's peace offer: the player's first war, its leader demanding */
 					int wi = -1, k2;
 					for (k2 = 0; k2 < g_world.nwar && wi < 0; k2++) if (peace_side(&g_world, k2, g_player)) wi = k2;
-					if (wi >= 0) { short pv[1]; pv[0] = g_world.country[g_player].capital; logf_("debugask: PEACEPROP -> %d", peace_offer(NULL, wi, peace_side(&g_world, wi, g_player) == 1 ? 2 : 1, pv, 1, 50000L)); }
+					if (wi >= 0) { short pv[1]; int ws = peace_side(&g_world, wi, g_player) == 1 ? 2 : 1; pv[0] = g_world.country[g_player].capital; logf_("debugask: PEACEPROP -> %d", peace_offer(NULL, wi, ws == 1 ? g_world.war[wi].att[0] : g_world.war[wi].def[0], ws, pv, 1, 50000L)); }
 				} else if (adone == 2) logf_("debugask: %s -> %d", cfg.debugask, diplo_ask(NULL, cfg.debugask, world_country(&g_world, "FRA"), world_country(&g_world, "BUR"), world_country(&g_world, "FRA")));
 			}
 			if (cfg.debugpeace[0] && g_player >= 0) {             /* test hook: the peace window */
@@ -4328,6 +4356,10 @@ if (id > 0 && id < g_world.nprov && g_army >= 0 && g_mil && !g_world.land[g_army
 					}
 					logf_("debugnaval: fleets %d / %d into %d", fo, fe, z);
 				}
+			}
+			if (cfg.debugdisc > 0 && cfg.debugdisc < g_world.nprov && g_player >= 0) {   /* test hook: a discovery */
+				static int dd;
+				if (++dd == 3) { WORLD_DISCOVER(&g_world, g_player, cfg.debugdisc); logf_("debugdisc: %d", cfg.debugdisc); }
 			}
 			if (cfg.debugmanu && g_mil && g_player >= 0 && g_world.country[g_player].capital > 0) {   /* test hook: the manufactory panel */
 				int cap = g_world.country[g_player].capital, kind;
@@ -4376,6 +4408,13 @@ if (id > 0 && id < g_world.nprov && g_army >= 0 && g_mil && !g_world.land[g_army
 					logf_("autosave %d: %s", g_world.now.year, rc ? "FAILED" : "ok");
 				}
 			}
+			{	/* terra incognita discovered by our explorers / fleets: the map shows it at once (user 2026-11-12) */
+				static unsigned long lastk = 0;
+				unsigned long ks = 0;
+				int b;
+				if (g_player >= 0) for (b = 0; b < (g_world.nprov + 7) / 8; b++) ks = ks * 33 + g_world.known[g_player][b];
+				if (ks != lastk) { if (lastk) logf_("map: a province discovered, redrawn"); lastk = ks; ep = ~g_world.owner_epoch; }
+			}
 			if (g_world.owner_epoch != ep) { refresh_map(mv); moved = 1; }
 			else if (g_mm.mode == MM_DIPLOMATIC || g_mm.mode == MM_RELATIONS) {               /* wars / alliances changed: recolour */
 				static int lw = -1, la = -1;
@@ -4392,6 +4431,8 @@ if (id > 0 && id < g_world.nprov && g_army >= 0 && g_mil && !g_world.land[g_army
 			int mx, my, mw, mh;
 			ui_map_rect(&mx, &my, &mw, &mh);
 			draw_bar();
+			if (g_nmw) mw_draw(amigagfx_chunky(), amigagfx_pitch());          /* the windows lie over the sidebar: drawn again
+			                                                                    * before the blit, or they blink every day */
 			scr_blit(0, 0, amigagfx_game_width(), BAR_H);                       /* top bar */
 			if (bar == 2) scr_blit(0, 0, mx, amigagfx_game_height());          /* sidebar (selection) */
 		}
@@ -4436,6 +4477,7 @@ if (id > 0 && id < g_world.nprov && g_army >= 0 && g_mil && !g_world.land[g_army
 					}
 				} else {
 					draw_bar();
+					if (g_nmw) mw_draw(amigagfx_chunky(), amigagfx_pitch());
 					if (want && !ui_tooltip_draw(amigagfx_chunky(), amigagfx_pitch(), tip_x, tip_y, want == 2)) want = 0;
 					scr_blit(0, 0, mx, amigagfx_game_height());
 				}

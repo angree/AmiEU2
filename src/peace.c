@@ -1024,7 +1024,7 @@ static int send_offer(Peace *p, AiOffer *o)
 		if (o->sep || !p->offer) return 0;
 		winner = o->value <= 0 ? 0 : peace_side(w, o->war, o->demand ? o->sender : o->recv);
 		if (!winner) { peace_make(p, o->war, 0, NULL, 0, 0, p->today); return 1; }   /* white peace for the player: the dialog shows terms only */
-		if (p->offer(p->offer_user, o->war, winner, o->prov, o->nprov, o->gold_m)) { apply_offer(p, o); return 1; }
+		if (p->offer(p->offer_user, o->war, o->sender, winner, o->prov, o->nprov, o->gold_m)) { apply_offer(p, o); return 1; }
 		logp(p, "the player declines the peace terms");
 		return 0;
 	}

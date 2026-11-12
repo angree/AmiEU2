@@ -71,7 +71,8 @@ int main(int argc, char **argv)
 		for (p = 1; p < w.nprov && dest < 0; p++) if (w.prov[p].owner == eng && w.prov[p].terrain < 5 && w.prov[p].port_sea > 0) dest = p;
 		if (f >= 0 && dest > 0) {
 			fprintf(out, "fleet %s (%d warships) in %s orders to %s: ", w.naval[f].name, w.naval[f].warships, w.prov[w.naval[f].location].name, w.prov[dest].name);
-			d = mil_order_fleet(mil, f, dest, start + 180);
+			fprintf(out, "(enemy port: %ld) ", mil_order_fleet(mil, f, dest, start + 180));   /* 0x48c640: refused */
+			d = mil_order_fleet(mil, f, w.prov[dest].port_sea, start + 180);
 			fprintf(out, "%ld days, %d steps\n", d, w.naval[f].npath);
 			for (day = start + 180; day < start + 300; day++) mil_day(mil, day);
 			fprintf(out, "after 120 days the fleet is in %s\n", w.prov[w.naval[f].location].name);

@@ -84,6 +84,9 @@ int sound_init(Pak *sfx, Pak *text)
 			fclose(f);
 		}
 	}
+	/* the music is topped up by its own process one priority above the game (user 2026-11-12: it stuttered;
+	 * only the main loop refilled it, so a long frame - month end, AI, a full map redraw, loading - drained it) */
+	printf("music thread: %s\n", AmigaAudio_MusicThreadStart(1) ? "on" : "FAILED (main loop refills)"); fflush(stdout);
 	return 0;
 }
 
@@ -193,6 +196,7 @@ void sound_free(void)
 {
 	int i;
 	if (!g_on) return;
+	AmigaAudio_MusicThreadStop();
 	printf("music: %lu buffer underruns this session\n", AmigaAudio_MusicUnderruns()); fflush(stdout);
 	if (g_stream) { AmigaAudio_MusicStop(); pcm_close(g_stream); g_stream = NULL; }
 	for (i = 0; i < g_nsfx; i++) AmigaAudio_FreeSample(g_sfx[i].chip);

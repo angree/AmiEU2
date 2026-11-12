@@ -605,7 +605,7 @@ int AmigaAudio_MusicThreadStart(int pri_wzgledem_gry)
     SetSignal(0, SIGBREAKF_CTRL_F);
     aa_thr_zyje = 1;
     pr = CreateNewProcTags(NP_Entry, (ULONG)MusThread,
-                           NP_Name, (ULONG)"Master of Magic music",
+                           NP_Name, (ULONG)"AmiEU2 music",
                            NP_Priority, (LONG)(aa_thr_rodzic->tc_Node.ln_Pri + pri_wzgledem_gry),
                            NP_StackSize, 32768UL,
                            TAG_DONE);

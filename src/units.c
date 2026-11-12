@@ -295,6 +295,7 @@ static void tri(unsigned char *dst, int pitch, int sw, int sh, int x0, int y0, i
 
 static long isq(long v) { long r = 0, b = 1L << 30; while (b > v) b >>= 2; while (b) { if (v >= r + b) { v -= r + b; r = (r >> 1) + b; } else r >>= 1; b >>= 2; } return r; }
 
+static long g_capd[17], g_capl;                         /* the route's end cap: distance to the end per sample, its length */
 static int octant(long dx, long dy)                     /* 0 N, 1 NE, 2 E, 3 SE, 4 S, 5 SW, 6 W, 7 NW (y down) */
 {
 	long ax = dx < 0 ? -dx : dx, ay = dy < 0 ? -dy : dy;
@@ -340,6 +341,20 @@ static void draw_route(const World *w, const MapView *mv, unsigned char *dst, in
 	pen_dark = g_inv[(8 << 8) | (0 << 4) | 0]; pen_mid = g_inv[(13 << 8) | (0 << 4) | 0]; pen_hi = g_inv[(15 << 8) | (3 << 4) | 2];
 	{	int gd = g_inv[(0 << 8) | (8 << 4) | 0], gm = g_inv[(0 << 8) | (13 << 4) | 0], gh = g_inv[(3 << 8) | (15 << 4) | 3];
 		pen_gd = gd; pen_gm = gm; pen_gh = gh; }
+	{	/* the end cap: how far each sample of the last segment is from the destination (Hermite samples as below) */
+		int i2 = n - 2, j, lx = 0, ly = 0;
+		long acc = 0, seg[17];
+		for (j = 0; j <= 16; j++) {
+			long t = j, t2 = t * t, t3 = t2 * t;
+			long h00 = 2 * t3 - 3 * 16 * t2 + 4096, h10 = t3 - 2 * 16 * t2 + 256 * t, h01 = -2 * t3 + 3 * 16 * t2, h11 = t3 - 16 * t2;
+			int x = (int)((h00 * px[i2] + h10 * tx[i2] + h01 * px[i2 + 1] + h11 * tx[i2 + 1]) / 4096);
+			int y = (int)((h00 * py[i2] + h10 * ty[i2] + h01 * py[i2 + 1] + h11 * ty[i2 + 1]) / 4096);
+			seg[j] = j ? isq((long)(x - lx) * (x - lx) + (long)(y - ly) * (y - ly)) : 0;
+			lx = x; ly = y;
+		}
+		for (j = 16; j >= 0; j--) { g_capd[j] = acc; acc += seg[j]; }
+		g_capl = 3L * (hw < 2 ? 2 : hw);                         /* the point is three half-widths long */
+	}
 	for (s = 0; s < 4; s++) {                                      /* 0 shadow, 1..3 the bands, widest first */
 		int ox = s ? 0 : 4 >> (zoom - 1), oy = s ? 0 : 6 >> (zoom - 1), bw = s == 0 || s == 1 ? hw : s == 2 ? (hw * 2 + 2) / 3 : (hw + 2) / 3;
 		int pen = s == 1 ? pen_dark : s == 2 ? pen_mid : pen_hi;
@@ -355,11 +370,18 @@ static void draw_route(const World *w, const MapView *mv, unsigned char *dst, in
 				if (j) {
 					long dx = x - lx, dy = y - ly, l = isq(dx * dx + dy * dy);
 					if (l > 0) {
-						int nx = (int)(-dy * bw / l), ny = (int)(dx * bw / l);
+						/* the end cap (0x409a49..0x409a92: two triangles from the last sample's edges): the last
+						 * segment narrows over its final quarter to a point at the destination */
+						int w0 = bw, w1 = bw, tip = i == n - 2 && known[i + 1];
+						int nx, ny, mx0, my0;
 						int pn = pen;
+						if (tip && g_capd[j - 1] < g_capl) w0 = (int)(bw * g_capd[j - 1] / g_capl);
+						if (tip && g_capd[j] < g_capl) w1 = (int)(bw * g_capd[j] / g_capl);
+						nx = (int)(-dy * w1 / l); ny = (int)(dx * w1 / l);
+						mx0 = (int)(-dy * w0 / l); my0 = (int)(dx * w0 / l);
 						if (i == 0 && j <= done16) pn = s == 1 ? pen_gd : s == 2 ? pen_gm : pen_gh;   /* travelled: green */
-						tri(dst, pitch, sw, sh, lx + nx, ly + ny, lx - nx, ly - ny, x + nx, y + ny, pn, s ? NULL : dark);
-						tri(dst, pitch, sw, sh, lx - nx, ly - ny, x - nx, y - ny, x + nx, y + ny, pn, s ? NULL : dark);
+						tri(dst, pitch, sw, sh, lx + mx0, ly + my0, lx - mx0, ly - my0, x + nx, y + ny, pn, s ? NULL : dark);
+						tri(dst, pitch, sw, sh, lx - mx0, ly - my0, x - nx, y - ny, x + nx, y + ny, pn, s ? NULL : dark);
 					}
 				}
 				lx = x; ly = y;

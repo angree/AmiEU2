@@ -58,6 +58,7 @@ struct Military {
 	long crt_cas[16][5], crt_mor[16][5];    /* x1000 */
 	signed char fire[7][7], shock[7][7];    /* CRT letter 0..4 by [our era][their era] */
 	long tmove[16];                         /* terrain movement factor x1000 */
+	short africa;                           /* the continent name id of Africa (CON_ 5), -1 none */
 	long rel_morale[16];                    /* religion.csv Morale /100, x1000, by religion row */
 	short rel_of_name[MAX_NAMES];
 	unsigned long *astart; unsigned long nadj; unsigned long *arec;   /* ADJACENT.TBL: neighbour, type pairs */
@@ -117,6 +118,7 @@ struct Military {
 };
 
 static long max_morale(const Military *m, int c);
+static long fleet_days(const Military *m, const NavalUnit *f, int from, int to);
 static int port_prov(const World *w, int p);
 static void pirates_day(Military *m);
 static void naval_attrition(Military *m);
@@ -287,6 +289,8 @@ Military *mil_load(World *w, Pak *text, Pak *map, unsigned long seed, char *err,
 	}
 	load_letters(text, "db/combat/landshock.csv", m->shock);
 	for (i = 0; i < 16; i++) m->tmove[i] = 1000;
+	m->africa = -1;
+	for (i = 0; i < w->nnames; i++) if (script_ieq(world_name(w, (short)i), "africa")) m->africa = (short)i;
 	if ((buf = (char *)pak_load(text, "map/terrain types.csv", &sz)) != NULL) {
 		cur = buf; r = -1;
 		while ((line = csv_line(&cur)) != NULL) {
@@ -473,15 +477,26 @@ static int may_pass(const Military *m, int c, int p)
 	return (w->dipflag[o][c] & DF_ACCESS) != 0;
 }
 
+/* U (0x48dfa0) x100 for a move into terra incognita, 100 into known land: 1.5 - 0.15 maneuver + K, K = 5 general,
+ * 4 admiral, 2.2 any other leader (conquistador, explorer, monarch); no leader = the built-in empty record
+ * (type 0, maneuver 0) = 6.5. For every country (SPEC_EXPLORERS 3.3); REB / NAT / PIR go anywhere. */
+static long ti_u100(const World *w, int c, int p, int lid, int ltype, int lmove)
+{
+	if (c < 0 || c == w->reb || c == w->nat || c == w->pir || WORLD_KNOWN(w, c, p)) return 100;
+	if (!lid) return 650;
+	return 150 - 15L * lmove + (ltype == 0 ? 500 : ltype == 1 ? 400 : 220);
+}
+
+/* 0x41d160 (SPEC_WAR_DIPLOMACY 11.1): cost = terrain + river / strait, x 2 into Africa (continent +0x106 = 5)
+ * or climate 0, x U into terra incognita, days = trunc(cost x 30 / speed), at least 1 */
 static long edge_days(const Military *m, const LandUnit *u, int to, int type)
 {
 	const Province *p = &m->w->prov[to];
 	long cost = m->tmove[p->terrain < 16 ? p->terrain : 0] + (type == 1 ? 500 : 0) + (type == 2 ? 1000 : 0);
-	long d = cost * 30 * 2 / speed_x2(u) / 1000;          /* trunc(cost x 30 / speed) */
-	if (u->owner >= 0 && m->w->country[u->owner].human && !WORLD_KNOWN(m->w, u->owner, to)) {   /* 3.3: x (1.5 - 0.15 maneuver + K), K 5 / 2.2 */
-		long uu = 150 - 15L * (u->l_id ? u->l_move : 0) + (u->l_id && (u->l_type == 2 || u->l_type == 3) ? 220 : 500);
-		d = d * uu / 100;
-	}
+	long d;
+	if ((m->africa >= 0 && p->continent == m->africa) || p->climate == 0) cost *= 2;
+	cost = cost * ti_u100(m->w, u->owner, to, u->l_id, u->l_type, u->l_move) / 100;
+	d = cost * 30 * 2 / speed_x2(u) / 1000;              /* truncated once, at the end */
 	return d < 1 ? 1 : d;
 }
 
@@ -1372,7 +1387,7 @@ static void ai_fleet_home(Military *m, int fi)
 		if (steps > 40) return;
 		for (i = 0; i < steps; i++) f->path[i] = rev[steps - 1 - i];
 		f->npath = (short)steps; f->pathpos = 0;
-		f->arrive_day = m->today + (port_prov(w, f->path[0]) ? PORT_DAYS : SEA_DAYS);
+		f->arrive_day = m->today + fleet_days(m, f, f->location, f->path[0]);
 		logm(m, "AI: %s fleet %s returns to %s", w->country[f->owner].tag, f->name ? f->name : "?", w->prov[port].name ? w->prov[port].name : "?");
 	}
 }
@@ -2104,6 +2119,16 @@ void mil_strength_inputs(const Military *m, int c, long *land, long *nav, long *
 static int sea_prov(const World *w, int p) { return p > 0 && p < w->nprov && w->prov[p].id >= 0 && w->prov[p].terrain == 5; }   /* 5 = sea (6 = river) */
 static int port_prov(const World *w, int p) { return p > 0 && p < w->nprov && w->prov[p].id >= 0 && w->prov[p].terrain < 5 && sea_prov(w, w->prov[p].port_sea); }
 
+/* one step of a fleet: into / out of a port PORT_DAYS, between sea zones SEA_DAYS, x U into a zone its
+ * owner does not know (0x41d160 with 0x48dfa0, SPEC_EXPLORERS 3.3: an explorer 1.5 - 0.15 maneuver + 2.2,
+ * an admiral + 4, no leader 6.5) */
+static long fleet_days(const Military *m, const NavalUnit *f, int from, int to)
+{
+	long d = port_prov(m->w, from) || port_prov(m->w, to) ? PORT_DAYS : SEA_DAYS;
+	if (to > 0 && to < m->w->nprov) d = d * ti_u100(m->w, f->owner, to, f->l_id, f->l_id ? f->l_type : 0, f->l_move) / 100;
+	return d < 1 ? 1 : d;
+}
+
 /* calls fn for every naval neighbour of p with the step's days */
 static int naval_next(const Military *m, int p, short *nb, long *days, int max)
 {
@@ -2122,6 +2147,21 @@ static int naval_next(const Military *m, int p, short *nb, long *days, int max)
 	return n;
 }
 
+/* 0x48c640 / 0x48c6c1: a fleet enters a port whose controller is itself, its vassal, a country that gave it
+ * military access, a member of a military alliance with it or its side in a war (REB / NAT / PIR anywhere) */
+int mil_may_dock(const Military *m, int c, int p)
+{
+	const World *w = m->w;
+	int o = w->prov[p].controller >= 0 ? w->prov[p].controller : w->prov[p].owner;
+	long x;
+	if (c < 0 || o < 0 || o == c || c == w->reb || c == w->nat || c == w->pir) return 1;
+	if (world_overlord(w, o) == c) return 1;
+	if (w->dipflag[o][c] & DF_ACCESS) return 1;
+	if (world_allied(w, c, o, ALLY_MILITARY)) return 1;
+	x = (long)c * MAX_COUNTRY + o;
+	return (m->sidebits[x >> 3] >> (x & 7)) & 1;
+}
+
 long mil_order_fleet(Military *m, int fi, int dest, long today)
 {
 	World *w = m->w;
@@ -2132,7 +2172,9 @@ long mil_order_fleet(Military *m, int fi, int dest, long today)
 	short nb[64], rev[64];
 	long dd[64];
 	int i, c, src = f->location, steps = 0;
+	if (dest > 0 && dest == src) { f->npath = 0; f->pathpos = 0; return 0; }   /* where it is: it stays (no error) */
 	if (dest <= 0 || dest >= w->nprov || src == dest || (!sea_prov(w, dest) && !port_prov(w, dest))) return -1;
+	if (port_prov(w, dest) && !mil_may_dock(m, f->owner, dest)) return -1;
 	for (i = 0; i < w->nprov; i++) { dist[i] = 0x7FFFFFFFL; prev[i] = -1; done[i] = 0; }
 	dist[src] = 0;
 	for (;;) {
@@ -2144,16 +2186,47 @@ long mil_order_fleet(Military *m, int fi, int dest, long today)
 		done[c] = 1;
 		if (c != src && port_prov(w, c)) continue;                  /* no sailing through somebody's harbour */
 		n = naval_next(m, c, nb, dd, 64);
-		for (k = 0; k < n; k++)
-			if (!done[nb[k]] && dist[c] + dd[k] < dist[nb[k]] && may_enter(w, f->owner, nb[k], 1, f->l_id ? f->l_type : 0)) { dist[nb[k]] = dist[c] + dd[k]; prev[nb[k]] = (short)c; }
+		for (k = 0; k < n; k++) {
+			dd[k] = dd[k] * ti_u100(w, f->owner, nb[k], f->l_id, f->l_id ? f->l_type : 0, f->l_move) / 100;   /* terra incognita */
+			if (!done[nb[k]] && dist[c] + dd[k] < dist[nb[k]] && may_enter(w, f->owner, nb[k], 1, f->l_id ? f->l_type : 0)
+			    && (nb[k] == src || !port_prov(w, nb[k]) || mil_may_dock(m, f->owner, nb[k]))) { dist[nb[k]] = dist[c] + dd[k]; prev[nb[k]] = (short)c; }
+		}
 	}
 	if (dist[dest] == 0x7FFFFFFFL) return -1;
 	for (c = dest; c != src && steps < 64; c = prev[c]) rev[steps++] = (short)c;
 	if (steps > 40) steps = 40;
 	for (i = 0; i < steps; i++) f->path[i] = rev[steps - 1 - i];
 	f->npath = (short)steps; f->pathpos = 0;
-	f->arrive_day = today + (port_prov(w, src) || port_prov(w, f->path[0]) ? PORT_DAYS : SEA_DAYS);
+	f->arrive_day = today + fleet_days(m, f, src, f->path[0]);
 	return dist[dest];
+}
+
+/* Shift + right click for a fleet (0x4907a0 with append, as for armies): the way from the order's last
+ * waypoint to dest is added to the course the fleet sails now; with no order it is a plain sail order. */
+long mil_order_fleet_append(Military *m, int fi, int dest, long today)
+{
+	NavalUnit *f = &m->w->naval[fi];
+	short keep[40];
+	int nk = 0, i, loc = f->location;
+	long arr = f->arrive_day, d;
+	if (f->pathpos >= f->npath) return mil_order_fleet(m, fi, dest, today);
+	for (i = f->pathpos; i < f->npath && nk < 40; i++) keep[nk++] = f->path[i];
+	f->location = keep[nk - 1];                          /* plan from the last waypoint */
+	d = mil_order_fleet(m, fi, dest, today);
+	f->location = (short)loc;
+	if (d < 0) {                                        /* refused: the old course stays */
+		for (i = 0; i < nk; i++) f->path[i] = keep[i];
+		f->npath = (short)nk; f->pathpos = 0; f->arrive_day = arr;
+		return -1;
+	}
+	{	short add[40];
+		int na = f->npath;
+		for (i = 0; i < na; i++) add[i] = f->path[i];
+		for (i = 0; i < nk; i++) f->path[i] = keep[i];
+		for (i = 0; i < na && nk + i < 40; i++) f->path[nk + i] = add[i];
+		f->npath = (short)(nk + i); f->pathpos = 0; f->arrive_day = arr;
+	}
+	return d;
 }
 
 /* 4.2: a fleet reveals the zone it enters and, in a sea zone, the unknown land next to it: all of it from
@@ -2195,7 +2268,7 @@ static void fleets_day(Military *m)
 		if (port_prov(w, next)) f->sea_since = w->now.year * 12L + w->now.month;
 		fleet_discover(m, i);
 		if (f->pathpos < f->npath)
-			f->arrive_day = m->today + (port_prov(w, next) || port_prov(w, f->path[f->pathpos]) ? PORT_DAYS : SEA_DAYS);
+			f->arrive_day = m->today + fleet_days(m, f, next, f->path[f->pathpos]);
 		else { f->npath = 0; world_note(w, NOTE_FLEET_ARRIVE, f->owner, next, i); logm(m, "%s fleet %s arrives in %s", w->country[f->owner].tag, f->name ? f->name : "?", w->prov[next].name ? w->prov[next].name : "?"); }
 	}
 }
@@ -4430,7 +4503,7 @@ static int ai_sail(Military *m, int fi, int dest)
 	if (steps == 0 || steps > 40) return -1;
 	for (i = 0; i < steps; i++) f->path[i] = rev[steps - 1 - i];
 	f->npath = (short)steps; f->pathpos = 0;
-	f->arrive_day = m->today + (port_prov(w, f->location) || port_prov(w, f->path[0]) ? PORT_DAYS : SEA_DAYS);
+	f->arrive_day = m->today + fleet_days(m, f, f->location, f->path[0]);
 	return steps;
 }
 

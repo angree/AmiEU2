@@ -22,7 +22,7 @@ static void lg(void *u, long today, const char *t)
 	fprintf(out, "%04d-%02d-%02d %s\n", y, m, d + 1, t);
 }
 
-static int offer_cb(void *u, int war, int winner, const short *provs, int np, long gold_m)
+static int offer_cb(void *u, int war, int sender, int winner, const short *provs, int np, long gold_m)
 {
 	int i;
 	(void)u;

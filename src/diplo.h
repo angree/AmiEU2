@@ -46,7 +46,7 @@ int    diplo_release(Diplo *d, int c, int t, long today);
 int    diplo_milally(const Diplo *d, int c);           /* military alliance index of c, -1 */
 
 /* diplomatic news for the player (NOTE_DIPMSG, prov = one of these; diplo_msg_type gives the message type) */
-enum { DM_INSULT, DM_WARN, DM_EMBARGO, DM_ALLOWTRADE, DM_CANCACC, DM_DISHONOR, DM_VASBREAK, DM_CLAIM, DM_GUARANTEE, DM_N };
+enum { DM_INSULT, DM_WARN, DM_EMBARGO, DM_ALLOWTRADE, DM_CANCACC, DM_DISHONOR, DM_VASBREAK, DM_CLAIM, DM_GUARANTEE, DM_WEDISHONOR, DM_N };
 const char *diplo_msg_type(int dm);
 typedef void (*DiploLogFn)(void *user, long today, const char *text);
 /* a proposal of the AI to the human player, as the game's message type (ROYMARPROP, MILALLPROP, MILALLINVPROP,

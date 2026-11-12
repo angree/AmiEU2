@@ -156,11 +156,13 @@ int  ui_choice_draw(unsigned char *dst, int pitch, const char *title, const char
 int  ui_choice_hit(int x, int y);              /* action index, UI_EV_PREV/NEXT (page arrows) or -1 */
 /* budget window slider under (x,y): returns the row (ECON_SL_*) and the value 0..1000 there, or -1 */
 int  ui_budget_hit(int x, int y, int *value);
+int  ui_budget_knob(int x, int y, const short *slider);   /* the knob under (x,y): its row (double click = lock), or -1 */
 int  ui_budget_btn_hit(int x, int y);
 int  ui_budget_boost_hit(int x, int y);     /* 0..4 = the one-time increase of row land / naval / stability / trade / production, -1 none */       /* 1 = Raise War Taxes (0x38), 2 = Take Bank Loan (0x37), 0 = none */
 /* domestic window: slider k minus (returns 2k) or plus (2k+1) button under (x,y), or -1 */
 int  ui_domestic_hit(int x, int y);
 int  ui_tech_hit(int x, int y);               /* land / naval window: maintenance slider level (500..1000) or -1 */
+int  ui_tech_drag(int x);            /* the same while the knob is dragged: x only, clamped */
 int  ui_country_hit(int x, int y);            /* country window: 1 domestic (shield), 2 religion, 3 Create Vassal, 0 none */
 /* the vassal window: row 0.., 100 Grant, 101 Back, -1 none */
 int  ui_vassal_hit(int x, int y);

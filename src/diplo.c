@@ -27,7 +27,7 @@ void logd(Diplo *d, const char *fmt, ...)
 void diplo_set_log(Diplo *d, DiploLogFn fn, void *user) { d->log = fn; d->loguser = user; }
 const char *diplo_msg_type(int dm)
 {
-	static const char *const t[DM_N] = { "INSUTOUS", "WARNTOUS", "TRADEREFUSAL", "TRADEALLOW", "CANCMILUS", "MILALLDISHONOR", "VASALLBREAK", "CLAIMTOUS", "GUARATOUS" };
+	static const char *const t[DM_N] = { "INSUTOUS", "WARNTOUS", "TRADEREFUSAL", "TRADEALLOW", "CANCMILUS", "MILALLDISHONOR", "VASALLBREAK", "CLAIMTOUS", "GUARATOUS", "WEMILALLDISHONOR" };
 	return dm >= 0 && dm < DM_N ? t[dm] : "";
 }
 void diplo_set_ask(Diplo *d, DiploAskFn fn, void *user) { d->ask = fn; d->ask_user = user; }
@@ -482,6 +482,8 @@ static void call_to_arms(Diplo *d, War *wr, int side)
 		int cap = w->country[enemy].capital;                                                     /* allies only against a European capital */
 		if (!(cap > 0 && cap < w->nprov && d->eur_cont && w->prov[cap].continent == d->eur_cont - 1)) { logd(d, "  %s calls no allies (enemy outside Europe)", w->country[lead].tag); return; }
 	}
+	short refused[24];
+	int nref = 0, j;
 	for (i = 0; i < w->nally; i++) {
 		const Alliance *al = &w->ally[i];
 		int has = 0;
@@ -495,13 +497,27 @@ static void call_to_arms(Diplo *d, War *wr, int side)
 			if (world_allied(w, c, enemy, ALLY_MILITARY) || c == enemy) continue;
 			if (w->country[c].human ? d->ask && d->ask(d->ask_user, "WPINVPROP", lead, enemy, lead)   /* REQUEST_HONOR_ALLIANCE to the player */
 			                        : ai_honour(d, c, lead, enemy, (int)(wr - w->war))) join(d, wr, side, c, lead, "ally");   /* 0x535f40 */
-			else {
-				stab(&w->country[c], -1); logd(d, "  %s refuses the call of %s", w->country[c].tag, w->country[lead].tag);
-				if (w->country[lead].human) world_note(w, NOTE_DIPMSG, c, DM_DISHONOR, -1);
-				world_sfx(w, lead, "diplomat_breach"); world_sfx(w, c, "diplomat_breach");   /* EXEC_DISHONOR_ALLIANCE, the player in it */
+			else {   /* EXEC_DISHONOR_ALLIANCE 0x44c980: a 6-month casus belli for the caller (GIVECB, holder NIEPEWNE),
+			          * the messages, stability -1, and the refuser leaves the alliance (0x441000) */
+				int m;
+				stab(&w->country[c], -1); logd(d, "  %s refuses the call of %s and leaves the alliance", w->country[c].tag, w->country[lead].tag);
+				world_give_cb(w, lead, c, d->today + 183);
+				if (w->country[c].human) world_note(w, NOTE_DIPMSG, lead, DM_WEDISHONOR, -1);          /* 0x56 to the refuser */
+				for (m = 0; m < al->n; m++)                                                           /* 0x55 to a player in the alliance */
+					if (al->member[m] != c && w->country[al->member[m]].human) world_note(w, NOTE_DIPMSG, c, DM_DISHONOR, -1);
+				world_sfx(w, lead, "diplomat_breach"); world_sfx(w, c, "diplomat_breach");
+				if (nref < 24) refused[nref++] = (short)c;
 			}
 		}
 	}
+	for (j = 0; j < nref; j++)                               /* out of the alliance it shares with the caller (after the loops) */
+		for (i = 0; i < w->nally; i++) {
+			int hl = 0, hc = 0;
+			if (w->ally[i].type != ALLY_MILITARY) continue;
+			for (k = 0; k < w->ally[i].n; k++) { if (w->ally[i].member[k] == lead) hl = 1; if (w->ally[i].member[k] == refused[j]) hc = 1; }
+			if (hl && hc) { ally_drop_member(w, i, refused[j]); break; }
+		}
+	if (nref) refresh_ties(d);
 }
 
 static void add_pact(Diplo *d, int a, int b, int kind, long until)

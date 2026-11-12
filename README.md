@@ -26,14 +26,33 @@ sent anywhere.
 
 ## 2. Install on the Amiga
 
-Copy the `AmiEU2` drawer to the Amiga and the converted `data` folder into it (`AmiEU2/data`).
+Copy the `AmiEU2` drawer (with its `fonts` drawer) to the Amiga and the converted `data` folder into it
+(`AmiEU2/data`).
 Run **eu2setup** once to pick the screen (AGA 640x480, RTG 640x480 … 1920x1080, 8–32 bit), sound and
 options, then start **eu2**. 2 MB of stack is taken care of by the program itself.
 
 Requirements: 68020+ (68040/060 to play comfortably), 64 MB fast RAM, AGA or an RTG card, AmigaOS 3.x,
 AROS 68k or MorphOS.
 
-## 3. Version 0.2.2
+## 3. Version 0.2.5
+
+0.2.5 fixes the bugs reported from playing 0.2.2:
+
+- refusing an ally's call to arms takes you out of the alliance as in the original (stability -1, the
+  caller gets a casus belli, the "Dishonor!" message); diplomatic messages from AI countries now reach you;
+- the peace offer herald names the country that sends it;
+- Space always toggles the pause, also with message windows open;
+- Shift + right click adds waypoints for fleets as well as armies; the route arrow ends in a point;
+- fleets enter only ports they may use (own, vassal, military access, allies), and an order to the
+  province the fleet is already in no longer fails;
+- the map redraws at once when a province is discovered;
+- exploring is as slow as in the original: terra incognita costs extra time for every country and for
+  fleets too, Africa and arctic provinces cost double;
+- View Relations shows your own country green;
+- the land / naval maintenance knob can be dragged; budget sliders lock with a double click on the knob;
+- the music is refilled by its own process and no longer stutters;
+- the archive now contains the `fonts` drawer (the CC0 / public-domain faces for 640x480); without it the
+  game fell back to the original fonts and some windows overlapped.
 
 0.2.2: the army and fleet panel as in the original. Every unit without a historical leader has
 the original's built-in leader (a name from the country's list, rank, maneuver / fire / shock / siege), the

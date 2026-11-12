@@ -100,6 +100,7 @@ static UiPeace g_tip_pw; static int g_tip_pw_on;
 static const World *g_tip_world;
 static UiPurchase g_tip_pu; static EconGoods g_tip_res; static int g_tip_res_on, g_tip_res_id;
 static Sprite g_track, g_knob;
+static int g_bud_koff, g_bud_kw, g_bud_kh;   /* the budget knobs as last drawn: y offset in the track, size */
 static void ui_free_lazy(void);
 static void put(const Sprite *s, int f, unsigned char *dst, int pitch, int x, int y);
 int ui_btn_disabled(int id);
@@ -864,7 +865,8 @@ static void budget_draw(unsigned char *dst, int pitch, const UiState *st)
 		text_at(&g_fside, g_have_fside, dst, pitch, TW_X(20), TW_Y(16 + y) - g_fside.cell / 2, text_get(lab[i]), g_pen_white, 0);
 		put(&g_track, 0, dst, pitch, TW_X(62), TW_Y(30 + y));
 		kx = 62 + (int)((long)b->slider[i] * (132 - 16) / 1000);
-		put(&g_knob, 0, dst, pitch, TW_X(kx), TW_Y(30 + y) + (g_track.h - g_knob.h) / 2);
+		put(&g_knob, (b->lock >> i & 1) ? 3 : 0, dst, pitch, TW_X(kx), TW_Y(30 + y) + (g_track.h - g_knob.h) / 2);   /* locked: frame 3, grey */
+		g_bud_koff = (g_track.h - g_knob.h) / 2; g_bud_kw = g_knob.w; g_bud_kh = g_knob.h;
 		snprintf(s, sizeof s, "%d%%", (b->slider[i] + 5) / 10);
 		text_at(&g_fsmall, g_have_fsmall, dst, pitch, TW_X(194), TW_Y(39 + y) - g_fsmall.cell / 2, s, g_pen_white, 0);
 		if (b->cost_m[i] > 0) {                  /* progress toward the next level (the progress bars' place is NIEPEWNE) */
@@ -899,6 +901,17 @@ int ui_budget_btn_hit(int x, int y)
 	if (x >= TW_X(66) - S(44) && x < TW_X(66) + S(44)) return 1;
 	if (x >= TW_X(158) - S(44) && x < TW_X(158) + S(44)) return 2;
 	return 0;
+}
+
+/* the knob under (x,y) for a double click (0x4279e0 event 0x13: only on the knob, not on the track): its row or -1 */
+int ui_budget_knob(int x, int y, const short *slider)
+{
+	int i, kw = g_bud_kw ? g_bud_kw : S(16), kh = g_bud_kh ? g_bud_kh : S(16);   /* as last drawn (the sprites may be freed since) */
+	for (i = 0; i < ECON_SL_N; i++) {
+		int kx = TW_X(62 + (int)((long)slider[i] * (132 - 16) / 1000)), ky = TW_Y(30 + 47 * i) + g_bud_koff;
+		if (x >= kx - S(2) && x < kx + kw + S(2) && y >= ky - S(2) && y < ky + kh + S(2)) return i;
+	}
+	return -1;
 }
 
 int ui_budget_hit(int x, int y, int *value)
@@ -1152,19 +1165,23 @@ static void tech_draw(unsigned char *dst, int pitch, const UiState *st, int nava
 	text_at(&g_fside, g_have_fside, dst, pitch, IW_X(112), IW_Y(20), text_get(naval ? "MILNAVAL" : "MILLAND"), g_pen_gold, 1);
 	snprintf(v, sizeof v, "%d", st->tech_level);                          /* the era name of LAND/NAVAL.csv: NIEPEWNE, the level for now */
 	text_at(&g_f24, g_have_f24, dst, pitch, IW_X(112), IW_Y(37), v, g_pen_white, 1);
-	text_at(&g_f14, g_have_f14, dst, pitch, IW_X(24), IW_Y(101), text_get("MILWRESEARCH"), g_pen_gold, 0);
+	/* each label is cut to the room left of its value (640x480: the labels ran into the numbers) */
+#define LABV(y, key, vleft) text_lim(&g_f14, g_have_f14, dst, pitch, IW_X(24), IW_Y(y), text_get(key), g_pen_gold, (vleft) - IW_X(24) - S(5))
 	if (b && b->cost_m[row] > 0) snprintf(v, sizeof v, "(%ld$ / %ld$)", b->progress_m[row] / 1000, b->cost_m[row] / 1000);
 	else snprintf(v, sizeof v, "---");
+	LABV(101, "MILWRESEARCH", IW_X(140) - font_width(&g_f14, v) / 2);
 	text_at(&g_f14, g_have_f14, dst, pitch, IW_X(140), IW_Y(101), v, g_pen_white, 1);
-	text_at(&g_f14, g_have_f14, dst, pitch, IW_X(24), IW_Y(131), text_get(naval ? "MILNAVALMA" : "MILLANDMA"), g_pen_gold, 0);
 	if (st->support >= 0) snprintf(v, sizeof v, "%ld", st->support); else snprintf(v, sizeof v, "---");   /* "%d" 0x45ab50 */
+	LABV(131, naval ? "MILNAVALMA" : "MILLANDMA", IW_X(196) - font_width(&g_f14, v));
 	text_right(&g_f14, g_have_f14, dst, pitch, IW_X(196), IW_Y(131), v, g_pen_white);
-	text_at(&g_f14, g_have_f14, dst, pitch, IW_X(24), IW_Y(150), text_get("MILTOTALS"), g_pen_gold, 0);
-	snprintf(v, sizeof v, "%ld", st->units[0]); text_right(&g_f14, g_have_f14, dst, pitch, IW_X(106), IW_Y(150), v, g_pen_white);
+	snprintf(v, sizeof v, "%ld", st->units[0]);
+	LABV(150, "MILTOTALS", IW_X(106) - font_width(&g_f14, v));
+	text_right(&g_f14, g_have_f14, dst, pitch, IW_X(106), IW_Y(150), v, g_pen_white);
 	snprintf(v, sizeof v, "%ld", st->units[1]); text_right(&g_f14, g_have_f14, dst, pitch, IW_X(150), IW_Y(150), v, g_pen_white);
 	snprintf(v, sizeof v, "%ld", st->units[2]); text_right(&g_f14, g_have_f14, dst, pitch, IW_X(196), IW_Y(150), v, g_pen_white);
-	text_at(&g_f14, g_have_f14, dst, pitch, IW_X(24), IW_Y(169), text_get("MILCOST"), g_pen_gold, 0);
 	fmt1(v, sizeof v, st->maint_month); strcat(v, "$");
+	LABV(169, "MILCOST", IW_X(198) - font_width(&g_f14, v));
+#undef LABV
 	text_right(&g_f14, g_have_f14, dst, pitch, IW_X(198), IW_Y(169), v, g_pen_white);
 	text_at(&g_fside, g_have_fside, dst, pitch, IW_X(112), IW_Y(189), text_get("MILMAIN"), g_pen_gold, 1);
 	text_at(&g_f14, g_have_f14, dst, pitch, IW_X(22), IW_Y(203), "50%", g_pen_gold, 0);
@@ -1180,6 +1197,13 @@ int ui_tech_hit(int x, int y)
 {
 	int x0 = IW_X(TECH_SLX), w = g_track.w ? g_track.w : S(132), kw = g_knob.w ? g_knob.w : S(16), ty = IW_Y(TECH_SLY), v;
 	if (y < ty - S(8) || y > ty + S(14) || x < x0 - S(8) || x > x0 + w + S(8)) return -1;
+	v = 500 + (int)((long)(x - x0 - kw / 2) * 500 / (w - kw));
+	return v < 500 ? 500 : v > 1000 ? 1000 : v;
+}
+
+int ui_tech_drag(int x)
+{
+	int x0 = IW_X(TECH_SLX), w = g_track.w ? g_track.w : S(132), kw = g_knob.w ? g_knob.w : S(16), v;
 	v = 500 + (int)((long)(x - x0 - kw / 2) * 500 / (w - kw));
 	return v < 500 ? 500 : v > 1000 ? 1000 : v;
 }

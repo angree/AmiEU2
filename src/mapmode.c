@@ -102,6 +102,7 @@ static void colour(void *user, const MapView *v, unsigned char *s, unsigned char
 		case MM_RELATIONS: {                                  /* mode 6: the relation value */
 			long r;
 			if (o < 0) { s[i] = CS_BLACK; break; }
+			if (o == f) { s[i] = CS_GREEN; sh[i] = 0; break; }   /* the focus country itself green, as in mode 5 (user 2026-11-12: it was white) */
 			r = f >= 0 && o != f ? world_rel(w, f, o) / 1000 : 0;
 			s[i] = (unsigned char)(r > 149 ? CS_DGREEN : r >= 76 ? CS_LGREEN : r >= -74 ? CS_ORANGE : r >= -149 ? CS_RED : CS_DRED);
 			break; }

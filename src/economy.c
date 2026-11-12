@@ -30,6 +30,7 @@ typedef struct {
 	long boost_until[5];                 /* one-time increase per budget row: next allowed day (track+4, SPEC_BOOST) */
 	long bankruptcies;
 	short maint_cut[2];        /* land / naval maintenance level below 100 %, x1000 (0..500; iw_tech slider 50..100 %) */
+	unsigned char lock;        /* budget rows locked by the player (bit = ECON_SL_*; the window's knobs +0x86, saved as interface.treasury) */
 } CEcon;
 
 struct Economy {
@@ -1291,6 +1292,7 @@ void econ_budget(const Economy *e, int c, EconBudget *b)
 	int k;
 	lvl[0] = &co->land_tech; lvl[1] = &co->naval_tech; lvl[2] = &co->trade_tech; lvl[3] = &co->infra_tech;
 	for (k = 0; k < ECON_SL_N; k++) b->slider[k] = ce->slider[ui_to_b[k]];
+	b->lock = ce->lock;
 	for (k = 0; k < 4; k++) {
 		int row = k < 2 ? k : k + 1;                     /* rows: land naval stab trade production(infra) treasury */
 		b->cost_m[row] = research_cost_m(e, co, track[k], *lvl[k], e->w->now.year);
@@ -1303,23 +1305,44 @@ void econ_budget(const Economy *e, int c, EconBudget *b)
 }
 
 /* sets one slider (0..1000) and scales the others so the six still sum to 1000 */
+/* the budget window (0x51c630 from 0x51ca04): the moved row takes v; the difference R0 = 1000 - sum is shared
+ * equally among the rows that are neither moved nor locked (R0 / n each, clamped 0..1000, what a clamped row
+ * cannot take goes round again - the exe leaves it for the next event). A locked row does not move; with
+ * every other row locked the moved one cannot move either. */
 void econ_set_slider(Economy *e, int c, int row, int v)
 {
 	CEcon *ce = &e->c[c];
-	int k, rest = 0, left;
-	if (row < 0 || row >= ECON_SL_N) return;
+	int k, pass, rest, n, free_[ECON_SL_N];
+	if (row < 0 || row >= ECON_SL_N || (ce->lock >> row & 1)) return;
 	if (v < 0) v = 0;
 	if (v > 1000) v = 1000;
-	for (k = 0; k < B_N; k++) if (k != ui_to_b[row]) rest += ce->slider[k];
-	left = 1000 - v;
-	for (k = 0; k < B_N; k++) {
-		if (k == ui_to_b[row]) continue;
-		ce->slider[k] = (short)(rest > 0 ? (long)ce->slider[k] * left / rest : left / (B_N - 1));
-	}
+	for (k = 0, n = 0; k < ECON_SL_N; k++) { free_[k] = k != row && !(ce->lock >> k & 1); n += free_[k]; }
+	if (!n) return;
 	ce->slider[ui_to_b[row]] = (short)v;
-	for (k = 0, rest = 0; k < B_N; k++) rest += ce->slider[k];
-	ce->slider[B_TREAS] = (short)(ce->slider[B_TREAS] + 1000 - rest);    /* rounding goes to the treasury */
-	if (ce->slider[B_TREAS] < 0) { ce->slider[ui_to_b[row]] = (short)(ce->slider[ui_to_b[row]] + ce->slider[B_TREAS]); ce->slider[B_TREAS] = 0; }
+	for (pass = 0; pass < ECON_SL_N; pass++) {
+		int share, extra;
+		for (k = 0, rest = 1000; k < ECON_SL_N; k++) rest -= ce->slider[ui_to_b[k]];
+		for (k = 0, n = 0; k < ECON_SL_N; k++) n += free_[k];
+		if (!rest || !n) break;
+		share = rest / n; extra = rest - share * n;              /* the remainder to the first free row */
+		for (k = 0; k < ECON_SL_N; k++) {
+			int b = ui_to_b[k], want;
+			if (!free_[k]) continue;
+			want = ce->slider[b] + share + extra; extra = 0;
+			if (want < 0) { want = 0; free_[k] = 0; }
+			if (want > 1000) { want = 1000; free_[k] = 0; }
+			ce->slider[b] = (short)want;
+		}
+	}
+	for (k = 0, rest = 1000; k < ECON_SL_N; k++) rest -= ce->slider[ui_to_b[k]];
+	ce->slider[ui_to_b[row]] = (short)(ce->slider[ui_to_b[row]] + rest);   /* what nobody could take stays with the moved row */
+}
+
+int econ_slider_lock(Economy *e, int c, int row)
+{
+	if (row < 0 || row >= ECON_SL_N) return 0;
+	e->c[c].lock ^= (unsigned char)(1 << row);
+	return e->c[c].lock >> row & 1;
 }
 
 /* ------------------------------------------------------------- save game */
@@ -1335,8 +1358,8 @@ void econ_save(const Economy *e, FILE *f)
 		fprintf(f, "\tc = { tag = %s p = { %ld %ld %ld %ld } stab = %ld sl = {", w->country[c].tag,
 		        ce->progress[0], ce->progress[1], ce->progress[2], ce->progress[3], ce->stab_progress);
 		for (k = 0; k < B_N; k++) fprintf(f, " %d", ce->slider[k]);
-		fprintf(f, " } gt = %ld mpr = %ld inc = %ld ytd = { %ld %ld %ld %ld } bk = %ld mc = { %d %d } loans = {", ce->grain_tr_m, ce->manpower_rate_m, ce->last_income_m,
-		        ce->ytd_tax, ce->ytd_prod, ce->ytd_gold, ce->ytd_tolls, ce->bankruptcies, ce->maint_cut[0], ce->maint_cut[1]);
+		fprintf(f, " } gt = %ld mpr = %ld inc = %ld ytd = { %ld %ld %ld %ld } bk = %ld lk = %d mc = { %d %d } loans = {", ce->grain_tr_m, ce->manpower_rate_m, ce->last_income_m,
+		        ce->ytd_tax, ce->ytd_prod, ce->ytd_gold, ce->ytd_tolls, ce->bankruptcies, ce->lock, ce->maint_cut[0], ce->maint_cut[1]);
 		for (k = 0; k < ce->nloans && k < 5; k++) fprintf(f, " %ld %ld", ce->loan_m[k], ce->loan_due[k]);
 		fprintf(f, " } lr = {");
 		for (k = 0; k < ce->nloans && k < 5; k++) fprintf(f, " %d", ce->loan_rate[k]);
@@ -1384,6 +1407,7 @@ void econ_restore(Economy *e, const SNode *root)
 		ce->last_income_m = script_int(n, "inc", 0);
 		if (ints(script_get(n, "ytd"), v, 4) == 4) { ce->ytd_tax = v[0]; ce->ytd_prod = v[1]; ce->ytd_gold = v[2]; ce->ytd_tolls = v[3]; }
 		ce->bankruptcies = script_int(n, "bk", 0);
+		ce->lock = (unsigned char)(script_int(n, "lk", 0) & 63);
 		ce->maint_cut[0] = ce->maint_cut[1] = 0;
 		if (ints(script_get(n, "mc"), v, 2) == 2) for (k = 0; k < 2; k++) ce->maint_cut[k] = (short)(v[k] < 0 ? 0 : v[k] > 500 ? 500 : v[k]);
 		m = ints(script_get(n, "loans"), v, 10);
