@@ -13,7 +13,66 @@ struct Leaders {
 	int n;
 	short first[MAX_COUNTRY], count[MAX_COUNTRY];
 	char *names; unsigned long nused, nsize;
+	char *rbuf; const char **rlist; short rfirst[MAX_COUNTRY], rcount[MAX_COUNTRY];   /* randomleaders.csv by country */
 };
+
+static int tag_is(const char *line, const char *tag)
+{
+	int i;
+	for (i = 0; i < 3; i++) {
+		char a = line[i], b = tag[i];
+		if (a >= 'a' && a <= 'z') a -= 32;
+		if (b >= 'a' && b <= 'z') b -= 32;
+		if (a != b || !a) return 0;
+	}
+	return line[3] == ';';
+}
+
+/* db/leaders/randomleaders.csv (the path 0x4d75c0 reads): "TAG;Name" lines, a name list per country */
+static void load_random_names(Leaders *L, const World *w, Pak *text)
+{
+	unsigned long sz, i;
+	int c, n = 0, k;
+	char *p;
+	if (!(L->rbuf = (char *)pak_load(text, "db/leaders/randomleaders.csv", &sz))) return;
+	for (i = 0; i < sz; i++) if (L->rbuf[i] == '\n' || L->rbuf[i] == '\r') L->rbuf[i] = 0;
+	for (i = 0; i < sz; i++) if (L->rbuf[i] && (i == 0 || !L->rbuf[i - 1])) n++;
+	if (!n || !(L->rlist = (const char **)malloc(n * sizeof *L->rlist))) return;
+	for (k = 0, c = 0; c < w->ncountry && c < MAX_COUNTRY; c++) {
+		L->rfirst[c] = (short)k; L->rcount[c] = 0;
+		for (p = L->rbuf; p < L->rbuf + sz; p += strlen(p) + 1) {
+			char *nm, *e;
+			if (!*p || !tag_is(p, w->country[c].tag)) continue;
+			nm = p + 4;
+			for (e = nm; *e && *e != ';'; e++) ;
+			while (e > nm && e[-1] == ' ') e--;
+			if (e == nm) continue;
+			*e = 0;
+			if (k < n) { L->rlist[k++] = nm; L->rcount[c]++; }
+		}
+	}
+}
+
+const char *lead_default_name(const Leaders *L, int c, int unit)
+{
+	if (!L || !L->rlist || c < 0 || c >= MAX_COUNTRY || L->rcount[c] <= 0) return NULL;
+	if (unit < 0) unit = 0;
+	return L->rlist[L->rfirst[c] + unit % L->rcount[c]];
+}
+
+/* 0x488230 stores shock = trunc(o/4 + 2), fire = trunc(q/4 + 2), siege = trunc(-o/4) (0 for a fleet), each >= 0,
+ * movement 2; the getters 0x488160 / 0x4881b0 / 0x488200 add trunc of the same policy term again (the unit's
+ * country is set, 0x488120), floored at 0. o = Offensive slider - 5, q = Quality slider - 5 (country +0x37e
+ * +0x18 / +0x20; which slider is which: SPEC_TIME_ECONOMY 3.1, NIEPEWNE). */
+void lead_default_stats(const World *w, int c, int naval, int *move, int *fire, int *shock, int *siege)
+{
+	int o = 0, q = 0, v;
+	if (c >= 0 && c < w->ncountry) { o = w->country[c].policy[4] - 5; q = w->country[c].policy[6] - 5; }
+	*move = 2;
+	v = (q + 8) / 4; if (v < 0) v = 0; v += q / 4; *fire = v < 0 ? 0 : v;
+	v = (o + 8) / 4; if (v < 0) v = 0; v += o / 4; *shock = v < 0 ? 0 : v;
+	v = naval ? 0 : (-o) / 4; if (v < 0) v = 0; v += (-o) / 4; *siege = naval || v < 0 ? 0 : v;
+}
 
 static int month_of(const char *s)
 {
@@ -84,10 +143,11 @@ Leaders *lead_load(const World *w, Pak *text)
 		if (a) arena_free(a);
 		free(buf);
 	}
+	load_random_names(L, w, text);
 	return L;
 }
 
-void lead_free(Leaders *l) { if (l) { free(l->names); free(l); } }
+void lead_free(Leaders *l) { if (l) { free(l->names); free(l->rbuf); free((void *)l->rlist); free(l); } }
 static long lstart(const World *w, const Leader *x, long now);
 /* events' `leader = id` trigger: the leader exists, is not dormant, is within his dates and did not fall */
 int lead_active(const Leaders *L, const World *w, long id)
@@ -112,6 +172,8 @@ void lead_swap(Leaders *L, int a, int b)
 	if (!L || a < 0 || b < 0 || a >= MAX_COUNTRY || b >= MAX_COUNTRY) return;
 	t = L->first[a]; L->first[a] = L->first[b]; L->first[b] = t;
 	t = L->count[a]; L->count[a] = L->count[b]; L->count[b] = t;
+	t = L->rfirst[a]; L->rfirst[a] = L->rfirst[b]; L->rfirst[b] = t;
+	t = L->rcount[a]; L->rcount[a] = L->rcount[b]; L->rcount[b] = t;
 	for (i = 0; i < L->n; i++) L->l[i].country = (short)(L->l[i].country == a ? b : L->l[i].country == b ? a : L->l[i].country);
 }
 

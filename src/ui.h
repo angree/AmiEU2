@@ -83,7 +83,8 @@ typedef struct {
 	const short *vas; int nvas, vas_sel;   /* UI_IW_VASSAL: candidates, the chosen row (-1); UI_IW_COUNTRY: nvas > 0 shows Create Vassal */
 	int can_split, can_merge, nstack;
 	int can_kill_natives;      /* UI_IW_ARMY: BUTTON_KILL_NATIVES applies (stationary, not in a battle, natives there) */   /* UI_IW_ARMY / NAVY: the commands that apply; own units in the place (arrows when > 1) */
-	const char *army_leader;   /* UI_IW_ARMY: its general, NULL none */
+	const char *army_leader;   /* UI_IW_ARMY / NAVY: its leader's name (the built-in one when none is attached) */
+	int dl_move, dl_fire, dl_shock, dl_siege;   /* the built-in leader's values (l_id 0) */
 	long interest_m;           /* UI_IW_FINANCE: the loans' monthly interest */
 	long load_m, cap_m;        /* UI_IW_NAVY: carried weight / capacity (x1000) */
 	int unload_mode;           /* waiting for the province to unload into */

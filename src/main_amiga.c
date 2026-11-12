@@ -723,6 +723,12 @@ static void draw_bar(void)
 			st.attrition = mil_attrition(g_mil, g_world.land[g_army].location, g_player);
 			if (g_world.land[g_army].l_id == LEAD_RANDOM) st.army_leader = g_world.land[g_army].lname;
 			else if (g_world.land[g_army].l_id) { const Leader *ld = lead_get(g_lead, g_world.land[g_army].l_id - 1); st.army_leader = ld ? ld->name : NULL; }
+			else {   /* the unit's built-in leader (0x48c040 -> unit +0x5e) */
+				int ow = g_world.land[g_army].owner;
+				st.army_leader = lead_default_name(g_lead, ow, g_army);
+				if (!st.army_leader && ow >= 0) st.army_leader = text_get(g_world.country[ow].tag);
+				lead_default_stats(&g_world, ow, 0, &st.dl_move, &st.dl_fire, &st.dl_shock, &st.dl_siege);
+			}
 			{	/* in a battle or a siege: the battle window instead (0x530d60) */
 				static MilBattleView bv;
 				if (mil_battle_view(g_mil, g_world.land[g_army].location, &bv) != MBV_NONE) { st.infowin = UI_IW_BATTLE; st.battle = &bv; }
@@ -738,6 +744,12 @@ static void draw_bar(void)
 			}
 			if (g_world.naval[g_fleet].l_id == LEAD_RANDOM) st.army_leader = g_world.naval[g_fleet].lname;
 			else if (g_world.naval[g_fleet].l_id > 0) { const Leader *ld = lead_get(g_lead, g_world.naval[g_fleet].l_id - 1); st.army_leader = ld ? ld->name : NULL; }
+			else {   /* the fleet's built-in leader */
+				int ow = g_world.naval[g_fleet].owner;
+				st.army_leader = lead_default_name(g_lead, ow, g_fleet);
+				if (!st.army_leader && ow >= 0) st.army_leader = text_get(g_world.country[ow].tag);
+				lead_default_stats(&g_world, ow, 1, &st.dl_move, &st.dl_fire, &st.dl_shock, &st.dl_siege);
+			}
 			{	const NavalUnit *sf = &g_world.naval[g_fleet];
 				int k2;
 				st.can_split = sf->warships + sf->galleys + sf->transports >= 2 && mil_fleet_load(&g_world, g_fleet) == 0; st.can_merge = mil_merge_fleet_count(g_mil, g_fleet) > 0;
@@ -3465,6 +3477,18 @@ front_again:
 	mon_update();
 	if (g_new_game) { lead_spawn(g_lead, &g_world, g_mil, 1); g_new_game = 0; }   /* the active conquistadors / explorers arrive */
 	lead_assign(g_lead, &g_world);
+	if (g_cfg->select == -1 && g_player >= 0) {        /* tests: select our first army that has a leader */
+		int k;
+		for (k = 0; k < g_world.nland; k++)
+			if (g_world.land[k].owner == g_player && !g_world.land[k].dead && g_world.land[k].l_id) { g_army = k; g_fleet = -1; g_selected = g_world.land[k].location; break; }
+		logf_("select=-1: army %d", k < g_world.nland ? k : -1);
+	}
+	if (g_cfg->select == -2 && g_player >= 0) {        /* tests: select our first fleet without a leader */
+		int k;
+		for (k = 0; k < g_world.nnaval; k++)
+			if (g_world.naval[k].owner == g_player && !g_world.naval[k].l_id && g_world.naval[k].warships + g_world.naval[k].galleys + g_world.naval[k].transports > 0) { g_fleet = k; g_army = -1; g_selected = g_world.naval[k].location; g_infowin = UI_IW_PROVINCE; break; }
+		logf_("select=-2: fleet %d", k < g_world.nnaval ? k : -1);
+	}
 	if (!g_tut && !quit_now) tut_setup(&text, 0);
 	if (!g_hist_loaded) {
 		ledger_hist_init(&g_hist, &g_world, g_player);          /* the Ledger's graphs: one sample now, then yearly */

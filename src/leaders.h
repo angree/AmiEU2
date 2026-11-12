@@ -25,6 +25,12 @@ const Leader *lead_get(const Leaders *l, int id);        /* id = LandUnit.l_id -
  * those whose start date fell in the month that just ended (stateless, so a loaded game agrees). */
 struct Military;
 void     lead_spawn(const Leaders *l, World *w, struct Military *m, int newgame);
+/* every unit's built-in leader (unit init 0x48dbe0 -> 0x488230): who commands when no leader is attached
+ * (0x48c040). Name from db/leaders/randomleaders.csv, the owner's list, item unit % count (0x4d7540);
+ * NULL = no list (the original then uses the country name). Stats as shown by the leader getters. */
+const char *lead_default_name(const Leaders *l, int country, int unit);
+void        lead_default_stats(const World *w, int country, int naval, int *move, int *fire, int *shock, int *siege);
+#define LEAD_DEFAULT_RANK 25
 /* a randomly generated leader (SPEC_EXPLORERS 1.5) has no record: his stats live in the unit, l_id = LEAD_RANDOM */
 #define LEAD_RANDOM 30000
 #endif

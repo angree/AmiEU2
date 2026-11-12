@@ -6,6 +6,7 @@
 #include "mapmode.h"
 #include "ui.h"
 #include "peace.h"
+#include "leaders.h"
 #include "religion.h"
 #include "units.h"
 #include "sprite.h"
@@ -2425,7 +2426,7 @@ static void unit_draw(unsigned char *dst, int pitch, const World *w, const UiSta
 	char s[64];
 	const char *name;
 	long n[3], loc, dest = -1, men;
-	int i, tech;
+	int i, tech, has_leader;
 	iw_fonts();
 	tech = st->player >= 0 ? 1 + w->country[st->player].land_tech / 20 : 1;     /* tech class 1..3: NIEPEWNE thresholds */
 	if (tech > 3) tech = 3;
@@ -2449,19 +2450,26 @@ static void unit_draw(unsigned char *dst, int pitch, const World *w, const UiSta
 		text_at(&g_f14, g_have_f14, dst, pitch, IW_X(152), IW_Y(16), text_get("ANWMORALE"), g_pen_white, 1);
 		put(&g_mstat, 0, dst, pitch, bx, IW_Y(29));
 		sprite_draw(&g_mbar, 0, dst, pitch, bx + (int)(g_mbar.w * mor / full), g_sh, bx, IW_Y(29) + (g_mstat.h - g_mbar.h) / 2);
-		snprintf(s, sizeof s, "%ld.%ld", u->morale_m / 1000, u->morale_m % 1000 / 100);
-		text_at(&g_f14, g_have_f14, dst, pitch, IW_X(152), IW_Y(39), s, g_pen_gold, 1);
+		/* under the bar the original writes a word, not the number (0x48b3b0, called at 0x4f7acb):
+		 * >= 4.5 Invincible, 3.5 Very Strong, 2.5 Strong, 1.5 Disciplined, 0.75 Weak, 0.25 Breaking, else Panic */
+		{	long m = u->morale_m;
+			const char *k = m >= 4500 ? "INVINCIBLE" : m >= 3500 ? "VERYSTRONG" : m >= 2500 ? "STRONG" :
+			                m >= 1500 ? "DISCIPLINED" : m >= 750 ? "WEAK" : m >= 250 ? "BREAKING" : "PANIC";
+			text_at(&g_f14, g_have_f14, dst, pitch, IW_X(152), IW_Y(39), text_get(k), g_pen_gold, 1);
+		}
 	}
 	put(&g_nameframe, 0, dst, pitch, IW_X(44), IW_Y(58));
+	/* the leader block (0x4f7c4b..0x4f7f00): the attached leader, else the unit's built-in one (0x48c040) */
+	has_leader = naval ? w->naval[st->fleet].l_id != 0 : w->land[st->army].l_id != 0;
 	text_at(&g_fsmall, g_have_fsmall, dst, pitch, IW_X(92), IW_Y(58) + (g_nameframe.h - g_fsmall.cell) / 2,
-	        st->army_leader ? st->army_leader : name ? name : "", g_pen_gold, 1);   /* the leader's name when there is one (0x48c040) */
+	        st->army_leader ? st->army_leader : "", g_pen_gold, 1);
 	{	/* the rank frame, and the leader's profession at (142,58) when he is an explorer or a conquistador
 		 * (profbig.bmp: 0 explorer, 1 conquistador; hidden for generals and admirals, 0x4f7d12) */
 		const LandUnit *lu = naval ? NULL : &w->land[st->army];
 		const NavalUnit *nu = naval ? &w->naval[st->fleet] : NULL;
-		int rk = lu && lu->l_id ? lu->l_rank : 0, prof = -1;
-		if (rk < 0) rk = 0;
-		if (rk > 6) rk = 6;
+		int r = lu && lu->l_id ? lu->l_rank : LEAD_DEFAULT_RANK, prof = -1, rk;
+		/* rank -> rank.bmp frame (0x4f7ca2): 0 -> 1 (0 for type 4), 1 -> 2, 2 -> 3, 3 -> 4, under 25 -> 5, else 6 */
+		rk = r <= 0 ? 1 : r == 1 ? 2 : r == 2 ? 3 : r == 3 ? 4 : r < 25 ? 5 : 6;
 		put(&g_rank, rk, dst, pitch, IW_X(18), IW_Y(58));
 		if (lu && lu->l_id) prof = lu->l_type == 2 ? 1 : lu->l_type == 3 ? 0 : -1;
 		if (nu && nu->l_id && nu->l_type != 1) prof = 0;
@@ -2469,7 +2477,10 @@ static void unit_draw(unsigned char *dst, int pitch, const World *w, const UiSta
 	}
 	put(&g_attr, st->attrition > 0 ? 1 : 0, dst, pitch, IW_X(170), IW_Y(72));   /* frame by level: NIEPEWNE */
 	snprintf(s, sizeof s, "%ld", st->attrition); text_at(&g_f14, g_have_f14, dst, pitch, IW_X(190), IW_Y(72), s, g_pen_white, 1);
-	{	/* the general's maneuver / fire / shock / siege (0 without one) */
+	if (!has_leader) {	/* the built-in leader's values */
+		stat_icon(dst, pitch, 0, 18, 38, st->dl_move); stat_icon(dst, pitch, 1, 56, 84, st->dl_fire);
+		stat_icon(dst, pitch, 2, 94, 122, st->dl_shock); stat_icon(dst, pitch, 3, 130, 150, naval ? 0 : st->dl_siege);
+	} else {	/* the attached leader's maneuver / fire / shock / siege */
 		const LandUnit *lu = naval ? NULL : &w->land[st->army];
 		const NavalUnit *nu = naval ? &w->naval[st->fleet] : NULL;
 		stat_icon(dst, pitch, 0, 18, 38, lu ? lu->l_move : nu && nu->l_id ? nu->l_move : 0); stat_icon(dst, pitch, 1, 56, 84, lu ? lu->l_fire : nu && nu->l_id ? nu->l_fire : 0);

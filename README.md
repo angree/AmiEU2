@@ -33,7 +33,11 @@ options, then start **eu2**. 2 MB of stack is taken care of by the program itsel
 Requirements: 68020+ (68040/060 to play comfortably), 64 MB fast RAM, AGA or an RTG card, AmigaOS 3.x,
 AROS 68k or MorphOS.
 
-## 3. Version 0.2.1
+## 3. Version 0.2.2
+
+0.2.2: the army and fleet panel as in the original. Every unit without a historical leader has
+the original's built-in leader (a name from the country's list, rank, maneuver / fire / shock / siege), the
+rank icon follows the original's rank table, and the morale is shown as a word (Invincible … Panic).
 
 0.2.1 fixes the Windows converter: the 0.2.0 converter zip held the Linux program under the name
 `eu2conv.exe`, which Windows refuses to start. The Amiga program is unchanged apart from the version number.
