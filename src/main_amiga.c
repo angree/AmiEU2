@@ -66,6 +66,7 @@ typedef struct {
 	int debugmanu;                         /* tests: open the build-manufactory sub-panel on our capital once */
 	int debugnaval;                        /* tests: on day 3 the debugwar country's first fleet and ours meet in a sea zone */
 	int debugdisc;                         /* tests: that province becomes known to us on day 3 */
+	int textprobe;                         /* tests: every sidebar window once, overlapping texts to the log (day 2) */
 	int intro;                             /* the intro stills before the menu (1, default) */
 	char debugpeace[4];                    /* tests: the peace window with that country on day 3, paused */
 	char debugask[20];                     /* tests: an AI proposal of that type (FRA proposing) on day 2 */
@@ -95,7 +96,7 @@ static void read_cfg(Cfg *c)
 	strcpy(c->country, "FRA");
 	c->sound = 1;
 	c->rtg_w = 800; c->rtg_h = 600; c->rtg_bits = 0; c->probemodes = 0; c->titlebar = 0; c->syspointer = 0; c->ahi = 0; c->anim = -1;
-	c->autoexit_ms = 0; c->title_ms = 1500; c->bench = 0; c->select = 0; c->menu = 1; c->xy_set = 0; c->debugwar[0] = 0; c->debugend = 0; c->debugsel = 0; c->debugmanu = 0; c->debugdisc = 0; c->debugnaval = 0; c->debugpeace[0] = 0; c->debugask[0] = 0; c->intro = 1;
+	c->autoexit_ms = 0; c->title_ms = 1500; c->bench = 0; c->select = 0; c->menu = 1; c->xy_set = 0; c->debugwar[0] = 0; c->debugend = 0; c->debugsel = 0; c->debugmanu = 0; c->debugdisc = 0; c->textprobe = 0; c->debugnaval = 0; c->debugpeace[0] = 0; c->debugask[0] = 0; c->intro = 1;
 	c->x = 9500; c->y = 1900; c->zoom = 2;
 	if (!f) return;
 	while (fgets(line, sizeof line, f)) {
@@ -112,6 +113,7 @@ static void read_cfg(Cfg *c)
 		else if (!strcmp(line, "debugsel")) c->debugsel = atoi(v);
 		else if (!strcmp(line, "debugmanu")) c->debugmanu = atoi(v);
 		else if (!strcmp(line, "debugdisc")) c->debugdisc = atoi(v);
+		else if (!strcmp(line, "textprobe")) c->textprobe = atoi(v);
 		else if (!strcmp(line, "debugnaval")) c->debugnaval = atoi(v);
 		else if (!strcmp(line, "intro")) c->intro = atoi(v);
 		else if (!strcmp(line, "debugpeace")) snprintf(c->debugpeace, sizeof c->debugpeace, "%s", v);
@@ -3334,6 +3336,60 @@ static void cursor_choose(MapView *mv, int held)
 
 static int risk_cb(void *u, int p) { return rev_risk(&g_world, (const Military *)u, p); }
 
+/* tests (textprobe=1): every sidebar window once - the texts that overlap or cross the panel go to the log,
+ * a screen dump per window to PROGDIR:tp_<tag>.ppm */
+static void tp_log(const char *s) { logf_("%s", s); }
+static void text_probe(MapView *mv)
+{
+	enum { S_PROV, S_PROVF, S_SEA, S_ARMY, S_NAVY, S_BUDGET, S_DOM, S_FIN, S_LAND, S_NAVAL, S_COUNTRY, S_MISSIONS, S_RELIGION, S_VASSAL,
+	       S_DIPLO, S_DIPLOT, S_DIPLOR, S_COT, S_COLONIST, S_MISSIONARY, S_RESOURCE, S_LOANS, S_PURCH, S_PURCHN, S_N };
+	static const char *const tag[S_N] = { "prov", "provforeign", "sea", "army", "navy", "budget", "domestic", "finance", "land", "naval",
+	       "country", "missions", "religion", "vassal", "diplo", "diplotarget", "diplorel", "cot", "colonist", "missionary", "resource",
+	       "loans", "purchase", "purchasenavy" };
+	int s, k, mx, my, mw, mh, cap = g_world.country[g_player].capital, fra = world_country(&g_world, "FRA"), total = 0;
+	int fcap = fra >= 0 ? g_world.country[fra].capital : cap, nmw;
+	ui_map_rect(&mx, &my, &mw, &mh);
+	nmw = g_nmw; g_nmw = 0;                               /* the message windows would cover the panel's right side */
+	for (s = 0; s < S_N; s++) {
+		char path[48];
+		g_army = g_fleet = -1; g_selected = cap; g_infowin = UI_IW_PROVINCE; g_dip_target = -1;
+		switch (s) {
+		case S_PROVF: g_selected = fcap; break;
+		case S_SEA: g_selected = cap > 0 && g_world.prov[cap].port_sea > 0 ? g_world.prov[cap].port_sea : cap; break;
+		case S_ARMY: for (k = 0; k < g_world.nland; k++) if (g_world.land[k].owner == g_player && !g_world.land[k].dead) { g_army = k; g_selected = g_world.land[k].location; break; } break;
+		case S_NAVY: for (k = 0; k < g_world.nnaval; k++) if (g_world.naval[k].owner == g_player) { g_fleet = k; g_selected = g_world.naval[k].location; break; } break;
+		case S_BUDGET: g_infowin = UI_IW_BUDGET; break;
+		case S_DOM: g_infowin = UI_IW_DOMESTIC; break;
+		case S_FIN: g_infowin = UI_IW_FINANCE; break;
+		case S_LAND: g_infowin = UI_IW_LANDTECH; break;
+		case S_NAVAL: g_infowin = UI_IW_NAVALTECH; break;
+		case S_COUNTRY: g_infowin = UI_IW_COUNTRY; break;
+		case S_MISSIONS: g_infowin = UI_IW_MISSIONS; break;
+		case S_RELIGION: g_infowin = UI_IW_RELIGION; g_rel_sel = -1; break;
+		case S_VASSAL: g_infowin = UI_IW_VASSAL; g_vas_sel = -1; break;
+		case S_DIPLO: g_dip_view = 0; dip_open(mv, -1); break;
+		case S_DIPLOT: g_dip_view = 0; dip_open(mv, fra); break;
+		case S_DIPLOR: g_dip_view = 1; dip_open(mv, fra); break;
+		case S_COT: g_env_prov = cap; g_env_cot = g_ec ? econ_prov_cots(g_ec)[cap] : -1; g_infowin = UI_IW_COT; break;
+		case S_COLONIST: g_env_prov = cap; g_infowin = UI_IW_COLONIST; break;
+		case S_MISSIONARY: g_env_prov = cap; g_infowin = UI_IW_MISSIONARY; break;
+		case S_RESOURCE: g_infowin = UI_IW_RESOURCE; break;
+		case S_LOANS: g_lo_target = fra; g_lo_amount = 100; g_infowin = UI_IW_LOANS; break;
+		case S_PURCH: g_pu_prov = cap; g_pu_naval = 0; g_infowin = UI_IW_PURCHASE; break;
+		case S_PURCHN: g_pu_prov = cap; g_pu_naval = 1; g_infowin = UI_IW_PURCHASE; break;
+		}
+		font_probe_begin();
+		redraw(mv, "probe");
+		total += font_probe_report(tag[s], 0, mx, ui_sidebar_right, tp_log);
+		snprintf(path, sizeof path, "PROGDIR:tp_%s.ppm", tag[s]);
+		amigagfx_dump_screen(path);
+		if (g_infowin == UI_IW_DIPLO) dip_close(mv);
+	}
+	g_army = g_fleet = -1; g_selected = cap; g_infowin = UI_IW_PROVINCE; g_dip_view = 0;
+	g_nmw = nmw;
+	logf_("textprobe: %d problems in %d windows", total, (int)S_N);
+}
+
 int eu2_main(void)
 {
 	Cfg cfg;
@@ -4357,6 +4413,7 @@ if (id > 0 && id < g_world.nprov && g_army >= 0 && g_mil && !g_world.land[g_army
 					logf_("debugnaval: fleets %d / %d into %d", fo, fe, z);
 				}
 			}
+			if (cfg.textprobe && g_player >= 0) { static int tpd; if (++tpd == 2) { text_probe(mv); moved = 1; bar = 2; } }
 			if (cfg.debugdisc > 0 && cfg.debugdisc < g_world.nprov && g_player >= 0) {   /* test hook: a discovery */
 				static int dd;
 				if (++dd == 3) { WORLD_DISCOVER(&g_world, g_player, cfg.debugdisc); logf_("debugdisc: %d", cfg.debugdisc); }

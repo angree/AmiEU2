@@ -1,0 +1,11 @@
+fx3x5.euf - "Tom Thumb", a 3x5 pixel font (4x6 cell), converted to EUF1 with tools/mkfont/bdf2euf.py.
+
+Font by Brian J. Swetland (original 3x5 glyphs) and Robey Pointer (Latin-1 extension, tom-thumb.bdf).
+  https://robey.lag.net/2010/01/23/tiny-monospace-font.html
+  https://opengameart.org/content/tom-thumb-tiny-font  (node 39490)
+
+Licence: the authors released it under CC0 1.0 (public domain dedication), alternatively CC-BY 3.0
+(update of 2015 on the page above; the earlier releases were BSD-3-Clause / MIT).
+CC0: https://creativecommons.org/publicdomain/zero/1.0/
+
+AmiEU2 uses it only at 640x480, for the texts that do not fit the panels in the normal faces.

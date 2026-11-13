@@ -90,8 +90,41 @@ int font_width(const Font *f, const char *s)
 	return w;
 }
 
+#define FP_N 200
+static struct { short x, y, w, h; char s[40]; } g_fp[FP_N];
+static int g_fpn = -1;
+void font_probe_begin(void) { g_fpn = 0; }
+int font_probe_report(const char *tag, int x0, int x1, int (*right)(int, int), void (*log)(const char *))
+{
+	int i, j, n = 0;
+	char b[200];
+	for (i = 0; i < g_fpn; i++) {
+		int r;
+		if (g_fp[i].x >= x1 || g_fp[i].x + g_fp[i].w <= x0) continue;          /* not in this panel */
+		r = right ? right(g_fp[i].y, g_fp[i].y + g_fp[i].h) : x1;              /* where the frame starts on these rows */
+		if (g_fp[i].x < x0 + 2 || g_fp[i].x + g_fp[i].w > r) {
+			snprintf(b, sizeof b, "textprobe %s: '%s' at %d,%d w %d crosses the panel (%d..%d)", tag, g_fp[i].s, g_fp[i].x, g_fp[i].y, g_fp[i].w, x0, r); log(b); n++;
+		}
+		for (j = i + 1; j < g_fpn; j++) {
+			int ox = (g_fp[i].x + g_fp[i].w < g_fp[j].x + g_fp[j].w ? g_fp[i].x + g_fp[i].w : g_fp[j].x + g_fp[j].w) - (g_fp[i].x > g_fp[j].x ? g_fp[i].x : g_fp[j].x);
+			int oy = (g_fp[i].y + g_fp[i].h < g_fp[j].y + g_fp[j].h ? g_fp[i].y + g_fp[i].h : g_fp[j].y + g_fp[j].h) - (g_fp[i].y > g_fp[j].y ? g_fp[i].y : g_fp[j].y);
+			if (ox > 1 && oy > 2 && strcmp(g_fp[i].s, g_fp[j].s)) {
+				snprintf(b, sizeof b, "textprobe %s: '%s' (%d,%d w %d) overlaps '%s' (%d,%d w %d)", tag, g_fp[i].s, g_fp[i].x, g_fp[i].y, g_fp[i].w, g_fp[j].s, g_fp[j].x, g_fp[j].y, g_fp[j].w); log(b); n++;
+			}
+		}
+	}
+	g_fpn = -1;
+	return n;
+}
+
 int font_draw(const Font *f, unsigned char *dst, int pitch, int w, int h, int x, int y, const char *s, int pen)
 {
+	if (g_fpn >= 0 && g_fpn < FP_N && *s) {
+		int k;
+		g_fp[g_fpn].x = (short)x; g_fp[g_fpn].y = (short)y; g_fp[g_fpn].w = (short)font_width(f, s); g_fp[g_fpn].h = (short)f->cell;
+		for (k = 0; k < 39 && s[k]; k++) g_fp[g_fpn].s[k] = s[k];
+		g_fp[g_fpn].s[k] = 0; g_fpn++;
+	}
 	for (; *s; s++) {
 		unsigned char ch = (unsigned char)*s;
 		int c = ch - f->first, gx, gy;

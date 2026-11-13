@@ -34,7 +34,12 @@ options, then start **eu2**. 2 MB of stack is taken care of by the program itsel
 Requirements: 68020+ (68040/060 to play comfortably), 64 MB fast RAM, AGA or an RTG card, AmigaOS 3.x,
 AROS 68k or MorphOS.
 
-## 3. Version 0.2.5
+## 3. Version 0.3.0
+
+0.3.0: at 640x480 the texts that do not fit their panel are drawn with a 3x5 pixel face (Tom Thumb,
+CC0) instead of running into the frame or into each other: the reputation line, the colonist table, the
+budget percentages, the loan title, long leader names. The army / fleet weight and load number moved
+into its own box (it stood on the siege value). 800x600 and larger keep the normal faces.
 
 0.2.5 fixes the bugs reported from playing 0.2.2:
 

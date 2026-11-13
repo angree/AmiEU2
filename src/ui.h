@@ -268,4 +268,5 @@ int  ui_msgwin_hit(const UiMsgWin *m, int x, int y);                            
 void ui_msgprop_draw(unsigned char *dst, int pitch, int x, int y, const char *title, int cur, int hover);   /* Message properties (0x575520) */
 int  ui_msgprop_hit(int x, int y);                                                    /* 0..3 a choice, 4 OK, 5 inside, -1 outside */
 
+int ui_sidebar_right(int y0, int y1);   /* the sidebar panel's usable right edge (text fitting, tests) */
 #endif

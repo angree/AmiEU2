@@ -33,6 +33,9 @@ static Sprite g_ic_merchant, g_ic_colonist, g_ic_diplomat, g_ic_missionary, g_ic
 static Font g_fbar, g_fside, g_fsmall;
 static Font g_ftight;                     /* the small face with 1 px less spacing (text_at) */
 static int g_have_ftight;
+static Font g_ftiny;                      /* Tom Thumb 3x5 (CC0): the last resort for a text that does not fit */
+static int g_have_ftiny;
+#define SB_RIGHT 212                      /* the info windows' inner right edge at 800x600 (NIEPEWNE) */
 static int g_have_fbar, g_have_fside, g_have_fsmall;
 static const char *g_fontdir = "PROGDIR:fonts/";
 void ui_set_font_dir(const char *d) { g_fontdir = d; }
@@ -161,6 +164,7 @@ int ui_init(Pak *gfx, Pak *text, const unsigned char *pal, const unsigned char *
 	/* fonts do not scale: the 640x480 screen uses the next smaller faces */
 	font_set_cc0(g_fontdir, g_scale >= 1000);      /* every face: Not Jam (CC0), see font.c */
 	{ char p[96]; snprintf(p, sizeof p, "%sfx5x8.euf", g_fontdir); g_have_ftight = font_load_euf(&g_ftight, p) == 0; }
+	if (g_scale < 1000) { char p[96]; snprintf(p, sizeof p, "%sfx3x5.euf", g_fontdir); g_have_ftiny = font_load_euf(&g_ftiny, p) == 0; }   /* 640x480 only (user: 800x600 keeps its faces) */
 	if (g_scale >= 1000) {                          /* 800x600 */
 		g_have_fbar = font_load(&g_fbar, gfx, "garamond20bold") == 0;
 		g_have_fside = font_load(&g_fside, gfx, "garamond14bold") == 0;
@@ -186,6 +190,7 @@ void ui_free(void)
 	if (g_have_fbar) font_free(&g_fbar);
 	if (g_have_fside) font_free(&g_fside);
 	if (g_have_fsmall) font_free(&g_fsmall);
+	if (g_have_ftiny) font_free(&g_ftiny);
 	piw_free();
 	ui_free_lazy();
 }
@@ -211,16 +216,27 @@ static void win8_box(unsigned char *dst, int pitch, int x, int y, int w, int h)
  * face (the same letters, 1 px less spacing) when the face is the small one */
 
 
+/* the sidebar panel's usable right edge (the info windows' inner frame) */
+int ui_sidebar_right(int y0, int y1)
+{
+	(void)y0; (void)y1;
+	return S(SB_RIGHT);
+}
+
+/* a text is drawn top-aligned with the face's cell; the 3x5 face sits on the same middle line */
+static int tiny_dy(const Font *f) { return (f->cell - g_ftiny.cell) / 2; }
+
 static void text_at(Font *f, int have, unsigned char *dst, int pitch, int x, int y, const char *s, int pen, int centre)
 {
-	int w;
+	int w, x0, x1, over;
 	if (!have) return;
 	w = font_width(f, s);
-	if (g_have_ftight && f->cell <= g_ftight.cell + 1 && f != &g_ftight) {
-		int x0 = x < S(224) ? 0 : S(224), x1 = x < S(224) ? S(224) : g_sw;
-		int over = centre ? (x - w / 2 < x0 + 2 || x + (w + 1) / 2 > x1 - 2) : x + w > x1 - 2;
-		if (over) { f = &g_ftight; w = font_width(f, s); }
-	}
+	x0 = x < S(224) ? 0 : S(224); x1 = x < S(224) ? ui_sidebar_right(y, y + f->cell) : g_sw;
+#define TA_OVER (centre ? (x - w / 2 < x0 + 2 || x + (w + 1) / 2 > x1 - 1) : x + w > x1 - 1)
+	over = TA_OVER;
+	if (over && g_have_ftight && f->cell <= g_ftight.cell + 1 && f != &g_ftight) { f = &g_ftight; w = font_width(f, s); over = TA_OVER; }
+	if (over && g_have_ftiny && f != &g_ftiny) { y += tiny_dy(f); f = &g_ftiny; w = font_width(f, s); }   /* still too long: 3x5 */
+#undef TA_OVER
 	if (centre) x -= w / 2;
 	font_draw(f, dst, pitch, g_sw, g_sh, x, y, s, pen);
 }
@@ -231,7 +247,9 @@ static void text_lim(Font *f, int have, unsigned char *dst, int pitch, int x, in
 	char b[96];
 	int n;
 	if (!have) return;
+	if (x < S(224) && x + maxw > ui_sidebar_right(y, y + f->cell) - 1) maxw = ui_sidebar_right(y, y + f->cell) - 1 - x;
 	if (font_width(f, s) > maxw && g_have_ftight && f->cell <= g_ftight.cell + 1) f = &g_ftight;
+	if (font_width(f, s) > maxw && g_have_ftiny) { y += tiny_dy(f); f = &g_ftiny; }
 	snprintf(b, sizeof b, "%s", s);
 	for (n = (int)strlen(b); n > 1 && font_width(f, b) > maxw; n--) b[n - 1] = 0;
 	font_draw(f, dst, pitch, g_sw, g_sh, x, y, b, pen);
@@ -242,6 +260,27 @@ static void text_fit(unsigned char *dst, int pitch, int x, int y, const char *s,
 {
 	if (g_have_fside && font_width(&g_fside, s) <= S(176)) text_at(&g_fside, 1, dst, pitch, x, y, s, pen, 1);
 	else text_at(&g_fsmall, g_have_fsmall, dst, pitch, x, y + (g_fside.cell - g_fsmall.cell) / 2, s, pen, 1);
+}
+
+/* centred on cx in a box maxw wide: the tight face, then the 3x5 one (640x480) when it does not fit, then cut */
+static void text_c_lim(Font *f, int have, unsigned char *dst, int pitch, int cx, int y, const char *s, int pen, int maxw)
+{
+	char b[96];
+	int n;
+	if (!have) return;
+	if (font_width(f, s) > maxw && g_have_ftight && f->cell <= g_ftight.cell + 1) f = &g_ftight;
+	if (font_width(f, s) > maxw && g_have_ftiny) { y += tiny_dy(f); f = &g_ftiny; }
+	snprintf(b, sizeof b, "%s", s);
+	for (n = (int)strlen(b); n > 1 && font_width(f, b) > maxw; n--) b[n - 1] = 0;
+	font_draw(f, dst, pitch, g_sw, g_sh, cx - font_width(f, b) / 2, y, b, pen);
+}
+
+/* right-aligned at xr, not left of xl: the 3x5 face (640x480) when it would run into what stands left of it */
+static void text_r_lim(Font *f, int have, unsigned char *dst, int pitch, int xl, int xr, int y, const char *s, int pen)
+{
+	if (!have) return;
+	if (xr - font_width(f, s) < xl && g_have_ftiny) { y += tiny_dy(f); f = &g_ftiny; }
+	font_draw(f, dst, pitch, g_sw, g_sh, xr - font_width(f, s), y, s, pen);
 }
 
 /* centred, word-wrapped text; text.csv uses a literal "\n" for line breaks */
@@ -1501,7 +1540,7 @@ static void dip_draw(unsigned char *dst, int pitch, const World *w, const UiStat
 		} else {
 			char k[12];
 			snprintf(k, sizeof k, "BADBOY%d", st->dip_badboy_tier);
-			text_at(&g_arial, g_have_arial, dst, pitch, IW_X(112), IW_Y(116), text_get(k), g_pen_white, 1);
+			text_c_lim(&g_arial, g_have_arial, dst, pitch, IW_X(112), IW_Y(116), text_get(k), g_pen_white, S(176));   /* the reputation: inside the box's frame */
 		}
 		if (st->ndip_lines == 0) text_at(&g_f14, g_have_f14, dst, pitch, IW_X(112), IW_Y(135), text_get("NOALLIANCES"), g_pen_white, 1);
 		else {
@@ -1664,16 +1703,16 @@ static void colonist_draw(unsigned char *dst, int pitch, const World *w, const U
 	text_at(&g_f14, g_have_f14, dst, pitch, IW_X(112), IW_Y(11), text_get("CWSENDC"), orange, 1);
 	text_at(&g_f24, g_have_f24, dst, pitch, IW_X(112), IW_Y(25), p->name ? p->name : "", g_pen_white, 1);
 	snprintf(v, sizeof v, text_get("CWMAXTAX"), (int)(p->income_m / 1000));
-	text_at(&g_f14, g_have_f14, dst, pitch, IW_X(76), IW_Y(55), v, orange, 0);
+	text_lim(&g_f14, g_have_f14, dst, pitch, IW_X(76), IW_Y(55), v, orange, S(SB_RIGHT) - IW_X(76));
 	if (p->tp) snprintf(v, sizeof v, text_get("CWTP"), (int)p->tp);
 	else if (p->owner >= 0 && p->population > 0) snprintf(v, sizeof v, text_get("CWCITY"), (int)p->population);
 	else snprintf(v, sizeof v, "%s", text_get(p->natives > 0 ? "CWNATIVEVILL" : "CWNOSET"));
-	text_at(&g_f14, g_have_f14, dst, pitch, IW_X(76), IW_Y(67), v, orange, 0);
-	text_at(&g_f14, g_have_f14, dst, pitch, IW_X(136), IW_Y(92), text_get("CWTRADER"), orange, 1);
-	text_at(&g_f14, g_have_f14, dst, pitch, IW_X(178), IW_Y(92), text_get("CWCOLONIST"), orange, 1);
-	text_at(&g_f14, g_have_f14, dst, pitch, IW_X(28), IW_Y(110), text_get("CWTIME"), orange, 0);
-	text_at(&g_f14, g_have_f14, dst, pitch, IW_X(28), IW_Y(125), text_get("CWCHANCE"), orange, 0);
-	text_at(&g_f14, g_have_f14, dst, pitch, IW_X(28), IW_Y(140), text_get("CWCOST"), orange, 0);
+	text_lim(&g_f14, g_have_f14, dst, pitch, IW_X(76), IW_Y(67), v, orange, S(SB_RIGHT) - IW_X(76));
+	text_c_lim(&g_f14, g_have_f14, dst, pitch, IW_X(136), IW_Y(92), text_get("CWTRADER"), orange, S(40));
+	text_c_lim(&g_f14, g_have_f14, dst, pitch, IW_X(178), IW_Y(92), text_get("CWCOLONIST"), orange, S(40));
+	text_lim(&g_f14, g_have_f14, dst, pitch, IW_X(28), IW_Y(110), text_get("CWTIME"), orange, IW_X(114) - IW_X(28));
+	text_lim(&g_f14, g_have_f14, dst, pitch, IW_X(28), IW_Y(125), text_get("CWCHANCE"), orange, IW_X(114) - IW_X(28));
+	text_lim(&g_f14, g_have_f14, dst, pitch, IW_X(28), IW_Y(140), text_get("CWCOST"), orange, IW_X(114) - IW_X(28));
 	{	/* the trader column */
 		int ton = st->tr_can == 0;
 		text_at(&g_f14, g_have_f14, dst, pitch, IW_X(136), IW_Y(110), "0", ton ? orange : grey, 1);
@@ -2485,8 +2524,8 @@ static void unit_draw(unsigned char *dst, int pitch, const World *w, const UiSta
 	put(&g_nameframe, 0, dst, pitch, IW_X(44), IW_Y(58));
 	/* the leader block (0x4f7c4b..0x4f7f00): the attached leader, else the unit's built-in one (0x48c040) */
 	has_leader = naval ? w->naval[st->fleet].l_id != 0 : w->land[st->army].l_id != 0;
-	text_at(&g_fsmall, g_have_fsmall, dst, pitch, IW_X(92), IW_Y(58) + (g_nameframe.h - g_fsmall.cell) / 2,
-	        st->army_leader ? st->army_leader : "", g_pen_gold, 1);
+	text_c_lim(&g_fsmall, g_have_fsmall, dst, pitch, IW_X(44) + g_nameframe.w / 2, IW_Y(58) + (g_nameframe.h - g_fsmall.cell) / 2,
+	           st->army_leader ? st->army_leader : "", g_pen_gold, g_nameframe.w - S(8));   /* a long name: inside the frame */
 	{	/* the rank frame, and the leader's profession at (142,58) when he is an explorer or a conquistador
 		 * (profbig.bmp: 0 explorer, 1 conquistador; hidden for generals and admirals, 0x4f7d12) */
 		const LandUnit *lu = naval ? NULL : &w->land[st->army];
@@ -2515,7 +2554,12 @@ static void unit_draw(unsigned char *dst, int pitch, const World *w, const UiSta
 		put(wt, 0, dst, pitch, IW_X(206) - wt->w, IW_Y(86));
 		if (naval) snprintf(s, sizeof s, text_get("NIWNTP"), (int)((st->load_m + 999) / 1000), (int)(st->cap_m / 1000));
 		else snprintf(s, sizeof s, "%ld", (men + 999) / 1000);
-		text_right(&g_f14, g_have_f14, dst, pitch, IW_X(202) - wt->w, IW_Y(87), s, g_pen_white);
+		{	/* in the dark box right of the icon (the sprite is icon + box; the icon ~12 px), not over the siege value */
+			int xl = IW_X(206) - wt->w + S(14), xr = IW_X(205);
+			if (naval && g_have_ftiny && font_width(&g_ftiny, s) > xr - xl)
+				snprintf(s, sizeof s, "%d/%d", (int)((st->load_m + 999) / 1000), (int)(st->cap_m / 1000));   /* "x of y" does not fit at 640x480 */
+			text_r_lim(&g_f14, g_have_f14, dst, pitch, xl, xr, IW_Y(87), s, g_pen_white);
+		}
 	}
 	g_unload_shown = 0;
 	if (naval && st->load_m > 0) {                     /* BUTTON_UNLOAD_ARMY (0x4f3572); its place is ours */
@@ -3313,8 +3357,8 @@ static void loans_draw(unsigned char *dst, int pitch, const World *w, const UiSt
 	}
 	g_lo_on = 1;
 	put(&g_iwloa, 0, dst, pitch, 0, S(103));
-	text_at(&g_f14, g_have_f14, dst, pitch, IW_X(112), IW_Y(11), text_get("LWTITLE"), g_pen_white, 1);
-	text_at(&g_f24, g_have_f24, dst, pitch, IW_X(112), IW_Y(8) + g_f14.cell, st->loan_target >= 0 ? text_get(w->country[st->loan_target].tag) : "", g_pen_white, 1);
+	text_c_lim(&g_f14, g_have_f14, dst, pitch, IW_X(112), IW_Y(11), text_get("LWTITLE"), g_pen_white, S(192));
+	text_at(&g_f24, g_have_f24, dst, pitch, IW_X(112), IW_Y(11) + g_f14.cell, st->loan_target >= 0 ? text_get(w->country[st->loan_target].tag) : "", g_pen_white, 1);
 	snprintf(s, sizeof s, "%ld", st->loan_amount); text_at(&g_f24, g_have_f24, dst, pitch, IW_X(136), IW_Y(65), s, g_pen_white, 1);
 	text_at(&g_fside, g_have_fside, dst, pitch, IW_X(136), IW_Y(106), text_get("LWAMOUNT"), g_pen_white, 1);
 	snprintf(s, sizeof s, "%d %%", st->loan_rate); text_at(&g_f24, g_have_f24, dst, pitch, IW_X(136), IW_Y(131), s, g_pen_white, 1);
@@ -4165,3 +4209,4 @@ void ui_msgwin_place(UiMsgWin *m)
 	if (m->y < 0) m->y = 0;
 	g_mwc_x += S(8); g_mwc_y += S(8);
 }
+

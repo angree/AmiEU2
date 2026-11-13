@@ -20,4 +20,8 @@ int  font_width(const Font *f, const char *s);
 void font_set_code_pens(int yellow, int white);   /* the pens for the texts' colour codes (0xA7 Y / W) */
 /* draws s at (x,y) into an 8-bit buffer with pen; clips to w x h; returns the end x */
 int  font_draw(const Font *f, unsigned char *dst, int pitch, int w, int h, int x, int y, const char *s, int pen);
+/* tests (textprobe=1): every text drawn between begin and report is kept; report lists the texts that
+ * overlap one another or cross x = edge (the sidebar's right side), once per pair */
+void font_probe_begin(void);
+int  font_probe_report(const char *tag, int x0, int x1, int (*right)(int y0, int y1), void (*log)(const char *));   /* right: the visible edge on rows y0..y1 (NULL: x1) */
 #endif
